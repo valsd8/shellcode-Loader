@@ -18,7 +18,7 @@ std::vector<unsigned char> DownloadBinary(const std::wstring& host, const std::w
     HINTERNET hConnect = WinHttpConnect(
         hSession,
         host.c_str(),
-        INTERNET_DEFAULT_HTTPS_PORT,
+        INTERNET_DEFAULT_HTTP_PORT,
         0
     );
 
@@ -34,7 +34,7 @@ std::vector<unsigned char> DownloadBinary(const std::wstring& host, const std::w
         NULL,
         WINHTTP_NO_REFERER,
         WINHTTP_DEFAULT_ACCEPT_TYPES,
-        WINHTTP_FLAG_SECURE
+        0
     );
 
     if (!hRequest) {

