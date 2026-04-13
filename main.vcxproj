@@ -129,6 +129,7 @@
     <ClCompile Include="debug.cpp" />
     <ClCompile Include="def.cpp" />
     <ClCompile Include="helper.cpp" />
+    <ClCompile Include="http.cpp" />
     <ClCompile Include="injector.cpp" />
     <ClCompile Include="syscall_global.cpp" />
     <ClCompile Include="main.cpp" />
@@ -142,6 +143,7 @@
     <ClInclude Include="debug.hpp" />
     <ClInclude Include="def.h" />
     <ClInclude Include="helper.hpp" />
+    <ClInclude Include="http.hpp" />
     <ClInclude Include="injector.hpp" />
     <ClInclude Include="syscall_global.hpp" />
     <ClInclude Include="syscall.hpp" />

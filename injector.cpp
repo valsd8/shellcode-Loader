@@ -40,9 +40,9 @@ injectorMethod mainInjector;
 
         ssnsysNtOpenProcess = structNtOpenProcess.ssn;
         wsysNtOpenProcess = structNtOpenProcess.syscallAddress;
-        //std::cout << "\n\n\n\n[+] ssn and syscalls address: \n";
-        //std::cout << "sycalls adress for NtOpenProcess: " << wsysNtOpenProcess << "\n";
-        //std::cout << "ssn for NtOpenProcess: " << ssnsysNtOpenProcess << "\n";
+        std::cout << "\n\n\n\n[+] ssn and syscalls address: \n";
+        std::cout << "sycalls adress for NtOpenProcess: " << wsysNtOpenProcess << "\n";
+        std::cout << "ssn for NtOpenProcess: " << ssnsysNtOpenProcess << "\n";
 
         NTSTATUS status = sysNtOpenProcess(
             &hProcess,
