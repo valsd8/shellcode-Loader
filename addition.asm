@@ -50,10 +50,6 @@ EXTERN ssnsysNtReadVirtualMemory:DWORD
 
 .code
 
-
-
-
-
 sysNtReadVirtualMemory PROC
     mov r10, rcx
     mov eax, dword ptr [ssnsysNtReadVirtualMemory]

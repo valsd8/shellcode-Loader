@@ -9,6 +9,9 @@ class helper {
 
 public:
     struct Options {
+		std::string mode;
+		std::wstring filePath;
+		std::wstring args;
         int pid = 0;
         std::string method;
         bool useRemote = false;

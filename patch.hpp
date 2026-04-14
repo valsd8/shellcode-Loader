@@ -4,3 +4,4 @@
 
 
 void patchRemoteETW(HANDLE hProcess);
+void patchRemoteAmsi(HANDLE hProcess);

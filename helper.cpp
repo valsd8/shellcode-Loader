@@ -109,7 +109,21 @@ helper helperHandler;
 
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
+            if (arg == "dotnet") {
+                opt.mode = "dotnet";
+            }
+            else if (arg == "shellcode") {
+                opt.mode = "shellcode";
+            }
 
+            if (arg == "--filePath" && i + 1 < argc) {
+                std::string tmp = argv[++i];
+                opt.filePath = std::wstring(tmp.begin(), tmp.end());
+            }
+            else if (arg == "--args" && i + 1 < argc) {
+                std::string tmp = argv[++i];
+                opt.args = std::wstring(tmp.begin(), tmp.end());
+            }
             if (arg == "--help") {
                 helperHandler.printHelp(argv[0]);
                 exit(0);

