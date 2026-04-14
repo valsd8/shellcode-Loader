@@ -1,8 +1,4 @@
 #include "dotnet.hpp"
-#include <metahost.h>
-#include <iostream>
-#include <string>
-#include <comdef.h>
 #pragma comment(lib, "mscoree.lib")
 
 
@@ -81,57 +77,84 @@ bool checkFile(std::wstring filePath) {
     return result;
 }
 
+#undef GetMessage
+#undef Yield
+#undef MessageBox
+
+#import <mscorlib.tlb> raw_interfaces_only \
+    high_property_prefixes("_get","_put","_putref") \
+    rename("ReportEvent", "ClrReportEvent") \
+    rename("IAppDomain", "mscorlib_IAppDomain") \
+    rename("IHashCodeProvider", "mscorlib_IHashCodeProvider") \
+    rename("or", "mscorlib_or")  // <--- Add this line
+using namespace mscorlib;
+
+
+using namespace mscorlib;
+
 void Dotnet(std::wstring FilePath, std::wstring args)
 {
-    std::wcout << L"------- In Dotnet function -------\n";
-    std::wcout << L"Target: " << FilePath << L"\n";
+    std::wcout << L"------- Reflective .NET Loader -------\n";
 
-    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     if (FAILED(hr)) return;
 
-    // Utilisation de Smart Pointers (CComPtr) recommandée en production, 
-    // mais restons sur des pointeurs bruts pour la clarté :
     ICLRMetaHost* metaHost = nullptr;
     ICLRRuntimeInfo* runtimeInfo = nullptr;
-    ICLRRuntimeHost* runtimeHost = nullptr;
-    DWORD pReturnValue = 0;
+    ICorRuntimeHost* runtimeHost = nullptr; // Note: ICor instead of ICLR
+    IUnknownPtr pAppDomainUnk = nullptr;
+    _AppDomainPtr pDefaultAppDomain = nullptr;
+    _AssemblyPtr pAssembly = nullptr;
+    _MethodInfoPtr pEntryPoint = nullptr;
 
-    // Aide pour afficher les erreurs HRESULT proprement
-    auto LogError = [](const char* msg, HRESULT hr) {
-        _com_error err(hr);
-        std::cout << msg << " Error: " << std::hex << hr << " (" << err.ErrorMessage() << ")\n";
-        };
+    // 1. Read file into memory buffer
+    std::ifstream file(FilePath, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) { std::cerr << "Failed to open file.\n"; return; }
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    std::vector<char> buffer(size);
+    if (!file.read(buffer.data(), size)) { return; }
 
+    // 2. Setup the Runtime
     hr = CLRCreateInstance(CLSID_CLRMetaHost, IID_ICLRMetaHost, (LPVOID*)&metaHost);
-    if (FAILED(hr)) { LogError("MetaHost creation failed", hr); goto cleanup; }
-
     hr = metaHost->GetRuntime(L"v4.0.30319", IID_ICLRRuntimeInfo, (LPVOID*)&runtimeInfo);
-    if (FAILED(hr)) { LogError("GetRuntime failed", hr); goto cleanup; }
 
-    hr = runtimeInfo->GetInterface(CLSID_CLRRuntimeHost, IID_ICLRRuntimeHost, (LPVOID*)&runtimeHost);
-    if (FAILED(hr)) { LogError("GetInterface failed", hr); goto cleanup; }
-
+    // Get ICorRuntimeHost so we can access AppDomains
+    hr = runtimeInfo->GetInterface(CLSID_CorRuntimeHost, IID_ICorRuntimeHost, (LPVOID*)&runtimeHost);
     hr = runtimeHost->Start();
-    if (FAILED(hr)) { LogError("RuntimeHost Start failed", hr); goto cleanup; }
 
-    // Tentative d'exécution
-    hr = runtimeHost->ExecuteInDefaultAppDomain(
-        FilePath.c_str(),
-        L"main.Program", // Vérifiez bien le Namespace.Classe
-        L"message",         // Nom de la méthode
-        args.c_str(),    // L'argument passé au Main(string arg)
-        &pReturnValue
-    );
+    // 3. Get the Default AppDomain
+    hr = runtimeHost->GetDefaultDomain(&pAppDomainUnk);
+    hr = pAppDomainUnk->QueryInterface(IID_PPV_ARGS(&pDefaultAppDomain));
 
-    if (SUCCEEDED(hr)) {
-        std::cout << "Success! Managed code returned: " << pReturnValue << "\n";
+    // 4. Prepare the SAFEARRAY for the bytes
+    SAFEARRAYBOUND bounds = { (ULONG)buffer.size(), 0 };
+    SAFEARRAY* psa = SafeArrayCreate(VT_UI1, 1, &bounds);
+    void* pData = nullptr;
+    SafeArrayAccessData(psa, &pData);
+    memcpy(pData, buffer.data(), buffer.size());
+    SafeArrayUnaccessData(psa);
+
+    // 5. Load the Assembly from memory and run Entry Point
+    std::cout << "Loading assembly into memory...\n";
+    hr = pDefaultAppDomain->Load_3(psa, &pAssembly);
+    if (FAILED(hr)) { std::cout << "Load_3 failed.\n"; goto cleanup; }
+
+    hr = pAssembly->get_EntryPoint(&pEntryPoint);
+    if (FAILED(hr) || pEntryPoint == nullptr) {
+        std::cout << "Could not find Entry Point (Main).\n";
+        goto cleanup;
     }
-    else {
-        LogError("Execution failed", hr);
-        // Si l'erreur est 0x80131513, c'est que la méthode C# n'est pas trouvée ou mal signée.
-    }
+
+    std::cout << "Invoking Entry Point...\n";
+    VARIANT varObj; VariantInit(&varObj); varObj.vt = VT_NULL;
+    VARIANT varArgs; VariantInit(&varArgs); varArgs.vt = VT_NULL;
+
+    // This executes Main(string[] args)
+    hr = pEntryPoint->Invoke_3(varObj, nullptr, &varObj);
 
 cleanup:
+    if (psa) SafeArrayDestroy(psa);
     if (runtimeHost) runtimeHost->Release();
     if (runtimeInfo) runtimeInfo->Release();
     if (metaHost) metaHost->Release();
