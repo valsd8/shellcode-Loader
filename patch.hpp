@@ -3,5 +3,5 @@
 #pragma once
 
 
-void patchRemoteETW(HANDLE hProcess);
-void patchRemoteAmsi(HANDLE hProcess);
+bool patchRemoteETW(HANDLE hProcess);
+bool patchRemoteAmsi(HANDLE hProcess);
