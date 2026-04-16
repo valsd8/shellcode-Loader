@@ -182,8 +182,16 @@ int main(int argc, char* argv[]) {
 
         //std::cout << "Parsed options - PID: " << opt.pid << ", Method: " << opt.method << ", Use Remote: " << opt.useRemote << "\n";
         if (opt.mode == "dotnet") {
-            std::wcout << "Parsed options - path: " << opt.filePath << ", args: " << opt.args << "\n";
-            InitDotnet(opt.filePath, false, opt.args);
+            //std::wcout << "Parsed options - path: " << opt.filePath << ", args: " << opt.args << "\n";
+            if(opt.useRemote){
+                std::cout << "[+] Remote dotnet\n";
+				std::wstring url = opt.url + opt.file;
+                InitDotnet(url, true, opt.args);
+			}
+            else {
+                InitDotnet(opt.filePath, false, opt.args);
+            }
+            
             std::cout << "Press Enter to exit...";
             std::cin.get();
             return 0;

