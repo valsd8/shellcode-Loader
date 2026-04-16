@@ -1,6 +1,7 @@
 #include "def.h"
 #include "injector.hpp"
 #include "dll.hpp"
+#include "apc.hpp"
 #include <fstream>
 #include <vector>
 #include <algorithm>
@@ -17,5 +18,6 @@ void SetupAMSIBypass();
 LONG WINAPI AmsiHwbpHandler(PEXCEPTION_POINTERS exceptions);
 void MonitorThreads();
 bool FullAmsiBypass();
+bool FullEtwBypass();
 void ApplyHwBpToThread(DWORD tid);
 LONG WINAPI UniversalHwbpHandler(PEXCEPTION_POINTERS exceptions);

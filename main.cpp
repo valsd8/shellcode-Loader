@@ -171,7 +171,7 @@ void moduleStomping(int pid, unsigned char* shellcode, SIZE_T shellcode_len) {
 }
 //debug antiDebug;
 int main(int argc, char* argv[]) {
-	std::cout << "AmsiInitialize: " << helperHandler.simpleHash("AmsiInitialize") << "\n";
+	std::cout << "NtCreateThreadEx: " << helperHandler.simpleHash("NtCreateThreadEx") << "\n";
     /*if (antiDebug.checkDebug()) {
         std::cout << "Hello world !!!";
         return 0;

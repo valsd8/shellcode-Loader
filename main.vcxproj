@@ -142,6 +142,7 @@
     <MASM Include="addition.asm" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="amsi.hpp" />
     <ClInclude Include="apc.hpp" />
     <ClInclude Include="debug.hpp" />
     <ClInclude Include="def.h" />
