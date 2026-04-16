@@ -128,6 +128,7 @@
     <ClCompile Include="apc.cpp" />
     <ClCompile Include="debug.cpp" />
     <ClCompile Include="def.cpp" />
+    <ClCompile Include="dll.cpp" />
     <ClCompile Include="dotnet.cpp" />
     <ClCompile Include="helper.cpp" />
     <ClCompile Include="http.cpp" />
@@ -144,6 +145,7 @@
     <ClInclude Include="apc.hpp" />
     <ClInclude Include="debug.hpp" />
     <ClInclude Include="def.h" />
+    <ClInclude Include="dll.hpp" />
     <ClInclude Include="dotnet.hpp" />
     <ClInclude Include="helper.hpp" />
     <ClInclude Include="http.hpp" />

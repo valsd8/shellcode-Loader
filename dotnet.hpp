@@ -14,6 +14,6 @@
 DWORD RvaToOffset(PIMAGE_NT_HEADERS ntHeaders, DWORD rva);
 LPSTR* convertArgsToLPSTRArray(std::wstring args, int& argsCount);
 std::wstring checkCLRVersion(LPCSTR assmblyBytes, size_t assemblyLength, LPCSTR byteSeq, size_t byteSeqLength);
-void InitDotnet(std::wstring FilePath, bool isRemote, std::wstring args);
-void Dotnet(std::wstring FilePath, std::wstring args, bool isRemote);
+void InitDotnet(std::wstring FilePath, bool isRemote, std::wstring args, bool https);
+void Dotnet(std::wstring FilePath, std::wstring args, bool isRemote, bool https);
 bool checkFile(std::wstring filePath);

@@ -37,6 +37,38 @@ syscallHandling syscallHandler;
         return NULL;
     }
 
+
+    PVOID syscallHandling::getFunctionAddressByHashWithModule(HMODULE libraryBase, DWORD targetHash)
+    {
+        
+
+        PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)libraryBase;
+        PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)((BYTE*)libraryBase + dosHeader->e_lfanew);
+
+        DWORD exportRVA = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
+        if (!exportRVA) return NULL;
+
+        PIMAGE_EXPORT_DIRECTORY exportDir = (PIMAGE_EXPORT_DIRECTORY)((BYTE*)libraryBase + exportRVA);
+
+        PDWORD names = (PDWORD)((BYTE*)libraryBase + exportDir->AddressOfNames);
+        PDWORD functions = (PDWORD)((BYTE*)libraryBase + exportDir->AddressOfFunctions);
+        PWORD ordinals = (PWORD)((BYTE*)libraryBase + exportDir->AddressOfNameOrdinals);
+
+        for (DWORD i = 0; i < exportDir->NumberOfNames; i++)
+        {
+            char* functionName = (char*)((BYTE*)libraryBase + names[i]);
+            //std::cout << "printing all function names: " << functionName << "at index " << i << "\n";
+
+            if (helperHandler.simpleHash(functionName) == targetHash)
+            {
+                DWORD functionRVA = functions[ordinals[i]];
+                return (PVOID)((BYTE*)libraryBase + functionRVA);
+            }
+        }
+
+        return NULL;
+    }
+
     syscallHandling::SYSCALL_DATA syscallHandling::getSyscallDataByHash(const wchar_t* library, DWORD targetHash) {
         syscallHandling::SYSCALL_DATA data = { 0 };
         // 1. Get the base address of the function using your existing hash logic

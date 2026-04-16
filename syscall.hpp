@@ -19,6 +19,7 @@ public:
     SYSCALL_DATA getSyscallDataByHash(const wchar_t* library, DWORD targetHash);
 
     SYSCALL_DATA getSyscallDataFromEncoded(unsigned char* encodedDll, DWORD hash);
+    PVOID getFunctionAddressByHashWithModule(HMODULE libraryBase, DWORD targetHash);
 
 
 };

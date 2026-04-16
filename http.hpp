@@ -6,4 +6,4 @@
 #include <vector>
 #include <iostream>
 
-std::vector<unsigned char> DownloadBinary(const std::wstring& host, const std::wstring& path);
+std::vector<unsigned char> DownloadBinary(const std::wstring& host, const std::wstring& path, bool https);

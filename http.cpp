@@ -1,7 +1,6 @@
 #include "http.hpp"
 #pragma comment(lib, "winhttp.lib")
-
-std::vector<unsigned char> DownloadBinary(const std::wstring& host, const std::wstring& path)
+std::vector<unsigned char> DownloadBinary(const std::wstring& host, const std::wstring& path, bool https)
 {
     std::vector<unsigned char> buffer;
 
@@ -12,20 +11,22 @@ std::vector<unsigned char> DownloadBinary(const std::wstring& host, const std::w
         WINHTTP_NO_PROXY_BYPASS,
         0
     );
-
     if (!hSession) return buffer;
+
+    INTERNET_PORT port = https ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT;
 
     HINTERNET hConnect = WinHttpConnect(
         hSession,
         host.c_str(),
-        INTERNET_DEFAULT_HTTP_PORT,
+        port,
         0
     );
-
     if (!hConnect) {
         WinHttpCloseHandle(hSession);
         return buffer;
     }
+
+    DWORD flags = https ? WINHTTP_FLAG_SECURE : 0;
 
     HINTERNET hRequest = WinHttpOpenRequest(
         hConnect,
@@ -34,13 +35,24 @@ std::vector<unsigned char> DownloadBinary(const std::wstring& host, const std::w
         NULL,
         WINHTTP_NO_REFERER,
         WINHTTP_DEFAULT_ACCEPT_TYPES,
-        0
+        flags
     );
 
     if (!hRequest) {
         WinHttpCloseHandle(hConnect);
         WinHttpCloseHandle(hSession);
         return buffer;
+    }
+
+    // (optional but often needed depending on target)
+    if (https) {
+        DWORD securityFlags =
+            SECURITY_FLAG_IGNORE_UNKNOWN_CA |
+            SECURITY_FLAG_IGNORE_CERT_DATE_INVALID |
+            SECURITY_FLAG_IGNORE_CERT_CN_INVALID |
+            SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE;
+
+        WinHttpSetOption(hRequest, WINHTTP_OPTION_SECURITY_FLAGS, &securityFlags, sizeof(securityFlags));
     }
 
     BOOL ok = WinHttpSendRequest(
@@ -68,7 +80,8 @@ std::vector<unsigned char> DownloadBinary(const std::wstring& host, const std::w
             size_t oldSize = buffer.size();
             buffer.resize(oldSize + size);
 
-            if (WinHttpReadData(hRequest,
+            if (WinHttpReadData(
+                hRequest,
                 buffer.data() + oldSize,
                 size,
                 &downloaded))
