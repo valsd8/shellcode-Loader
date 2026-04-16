@@ -179,3 +179,74 @@ helper helperHandler;
 
         return opt;
     }
+
+
+    void helper::UnlinkModuleFromPEB(std::wstring targetName) {
+        // 1. Get PEB from GS register (x64)
+        PPEB pPeb = (PPEB)__readgsqword(0x60);
+
+        // 2. Access the Loader Data
+        PLIST_ENTRY head = &pPeb->Ldr->InLoadOrderModuleList;
+        PLIST_ENTRY current = head->Flink;
+
+        while (current != head) {
+            LDR_DATA_TABLE_ENTRY* entry = CONTAINING_RECORD(current, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+            if (entry->FullDllName.Buffer && targetName == entry->BaseDllName.Buffer) {
+                // Unlink from InLoadOrderModuleList
+                entry->InLoadOrderLinks.Flink->Blink = entry->InLoadOrderLinks.Blink;
+                entry->InLoadOrderLinks.Blink->Flink = entry->InLoadOrderLinks.Flink;
+
+                // Unlink from InMemoryOrderModuleList
+                entry->InMemoryOrderLinks.Flink->Blink = entry->InMemoryOrderLinks.Blink;
+                entry->InMemoryOrderLinks.Blink->Flink = entry->InMemoryOrderLinks.Flink;
+
+                // Unlink from InInitializationOrderModuleList
+                entry->InInitializationOrderLinks.Flink->Blink = entry->InInitializationOrderLinks.Blink;
+                entry->InInitializationOrderLinks.Blink->Flink = entry->InInitializationOrderLinks.Flink;
+
+                // Optional: Wipe the name from memory to be even stealthier
+                //memset(entry->FullDllName.Buffer, 0, entry->FullDllName.Length);
+
+                return;
+            }
+            current = current->Flink;
+        }
+    }
+
+
+    void helper::ClearDotNetFromPeb() {
+        PPEB pPeb = (PPEB)__readgsqword(0x60);
+        PLIST_ENTRY head = &pPeb->Ldr->InLoadOrderModuleList;
+        PLIST_ENTRY current = head->Flink;
+
+        std::vector<std::wstring> modulesToUnlink;
+
+        while (current != head) {
+            LDR_DATA_TABLE_ENTRY* entry = CONTAINING_RECORD(current, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+            if (entry->BaseDllName.Buffer != nullptr) {
+                std::wstring name(entry->BaseDllName.Buffer, entry->BaseDllName.Length / sizeof(wchar_t));
+
+                // Convert to lowercase for reliable comparison
+                std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+
+                // The "Hit List"
+                if (name.find(L"clr") != std::wstring::npos ||
+                    name.find(L".ni.") != std::wstring::npos ||
+                    name.find(L"mscore") != std::wstring::npos ||
+                    name.find(L"mscorlib") != std::wstring::npos ||
+                    name.find(L"system.") != std::wstring::npos || 
+                    name.find(L"clr0400") != std::wstring::npos ||
+                    name.find(L"vcruntime140_clr0400.dll") != std::wstring::npos) // Catches system.ni.dll, etc.
+                {
+                    modulesToUnlink.push_back(name);
+                }
+            }
+            current = current->Flink;
+        }
+
+        for (const auto& dll : modulesToUnlink) {
+            UnlinkModuleFromPEB(dll);
+        }
+    }

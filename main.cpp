@@ -169,9 +169,43 @@ void moduleStomping(int pid, unsigned char* shellcode, SIZE_T shellcode_len) {
     
 
 }
+
+void InvokeDllMain(HMODULE hMappedModule) {
+    typedef BOOL(WINAPI* f_DllMain)(HINSTANCE, DWORD, LPVOID);
+    // 1. Get pointers to headers
+    PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)hMappedModule;
+    PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)((BYTE*)hMappedModule + dosHeader->e_lfanew);
+
+    // 2. Calculate the absolute address of the Entry Point
+    // AddressOfEntryPoint is a Relative Virtual Address (RVA)
+    uintptr_t entryPointRVA = ntHeaders->OptionalHeader.AddressOfEntryPoint;
+
+    if (entryPointRVA == 0) {
+        std::cout << "[!] DLL has no entry point defined.\n";
+        return;
+    }
+
+    f_DllMain pDllMain = (f_DllMain)((BYTE*)hMappedModule + entryPointRVA);
+
+    std::cout << "[+] Invoking DllMain at: " << (void*)pDllMain << "\n";
+
+    // 3. Call DLL_PROCESS_ATTACH (1)
+    // This initializes the DLL.
+    if (pDllMain((HINSTANCE)hMappedModule, DLL_PROCESS_ATTACH, nullptr)) {
+        std::cout << "[+] DllMain initialized successfully.\n";
+    }
+    else {
+        std::cout << "[-] DllMain returned FALSE (Initialization failed).\n";
+    }
+}
 //debug antiDebug;
 int main(int argc, char* argv[]) {
-	std::cout << "NtCreateThreadEx: " << helperHandler.simpleHash("NtCreateThreadEx") << "\n";
+    /*
+    std::vector<unsigned char> buff = ReadFileToBuffer("hello.dll");
+    std::cout << "hello.dll size: " << buff.size() << "\n";
+    HMODULE helloWorld = (HMODULE)LocalManualMap(buff.data());
+    InvokeDllMain(helloWorld);
+	std::cout << "LdrLoadDll: " << helperHandler.simpleHash("LdrLoadDll") << "\n";
     /*if (antiDebug.checkDebug()) {
         std::cout << "Hello world !!!";
         return 0;

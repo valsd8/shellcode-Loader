@@ -1,8 +1,11 @@
 #include "def.h"
+#include "injector.hpp"
 #pragma once
 
 HMODULE LocalManualMap(BYTE* pSrcData);
-
+void RebaseDllRemote(BYTE* pLocalBuffer, IMAGE_NT_HEADERS* pNtHeader, uintptr_t remoteTargetBase);
+void RebaseDll(BYTE* pBase, IMAGE_NT_HEADERS* pNtHeader);
+bool ResolveImports(BYTE* pBase, IMAGE_NT_HEADERS* pNtHeader);
 
 using f_LoadLibraryA = HINSTANCE(WINAPI*)(const char* lpLibFilename);
 using f_GetProcAddress = FARPROC(WINAPI*)(HMODULE hModule, LPCSTR lpProcName);

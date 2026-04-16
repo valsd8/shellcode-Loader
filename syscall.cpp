@@ -40,12 +40,13 @@ syscallHandling syscallHandler;
 
     PVOID syscallHandling::getFunctionAddressByHashWithModule(HMODULE libraryBase, DWORD targetHash)
     {
-        
-
         PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)libraryBase;
         PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)((BYTE*)libraryBase + dosHeader->e_lfanew);
 
-        DWORD exportRVA = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
+        IMAGE_DATA_DIRECTORY exportDirAttr = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+        DWORD exportRVA = exportDirAttr.VirtualAddress;
+        DWORD exportSize = exportDirAttr.Size;
+
         if (!exportRVA) return NULL;
 
         PIMAGE_EXPORT_DIRECTORY exportDir = (PIMAGE_EXPORT_DIRECTORY)((BYTE*)libraryBase + exportRVA);
@@ -57,15 +58,35 @@ syscallHandling syscallHandler;
         for (DWORD i = 0; i < exportDir->NumberOfNames; i++)
         {
             char* functionName = (char*)((BYTE*)libraryBase + names[i]);
-            //std::cout << "printing all function names: " << functionName << "at index " << i << "\n";
 
             if (helperHandler.simpleHash(functionName) == targetHash)
             {
                 DWORD functionRVA = functions[ordinals[i]];
-                return (PVOID)((BYTE*)libraryBase + functionRVA);
+                PVOID functionAddr = (PVOID)((BYTE*)libraryBase + functionRVA);
+
+                // --- THE FORWARDER FIX ---
+                if (functionRVA >= exportRVA && functionRVA < (exportRVA + exportSize))
+                {
+                    // This is a forwarder string (e.g., "mscoreei.CLRCreateInstance")
+                    std::string forwarderStr((char*)functionAddr);
+                    size_t dotPos = forwarderStr.find('.');
+                    if (dotPos != std::string::npos)
+                    {
+                        std::string dllName = forwarderStr.substr(0, dotPos) + ".dll";
+                        std::string realFuncName = forwarderStr.substr(dotPos + 1);
+
+                        // You need to resolve the address from the actual target DLL
+                        HMODULE targetLib = GetModuleHandleA(dllName.c_str());
+                        if (!targetLib) targetLib = LoadLibraryA(dllName.c_str());
+
+                        return GetProcAddress(targetLib, realFuncName.c_str());
+                    }
+                }
+                // -------------------------
+
+                return functionAddr;
             }
         }
-
         return NULL;
     }
 

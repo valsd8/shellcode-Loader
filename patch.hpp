@@ -8,16 +8,12 @@
 #include <thread>
 #pragma once
 
-
 bool patchRemoteETW(HANDLE hProcess);
-bool patchRemoteAmsi(HANDLE hProcess);
 
 void SetupEtwBypass();
 LONG WINAPI EtwHwbpHandler(PEXCEPTION_POINTERS exceptions);
-void SetupAMSIBypass();
-LONG WINAPI AmsiHwbpHandler(PEXCEPTION_POINTERS exceptions);
-void MonitorThreads();
+
 bool FullAmsiBypass();
 bool FullEtwBypass();
-void ApplyHwBpToThread(DWORD tid);
+std::vector<BYTE> ReadFileToBuffer(const std::string& filename);
 LONG WINAPI UniversalHwbpHandler(PEXCEPTION_POINTERS exceptions);

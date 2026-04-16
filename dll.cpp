@@ -1,7 +1,30 @@
 #include <windows.h>
 #include "dll.hpp"
 #include <iostream>
+void RebaseDllRemote(BYTE* pLocalBuffer, IMAGE_NT_HEADERS* pNtHeader, uintptr_t remoteTargetBase) {
+    auto& relocationDir = pNtHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
+    if (relocationDir.Size == 0) return;
 
+    auto* pRelocBlock = reinterpret_cast<IMAGE_BASE_RELOCATION*>(pLocalBuffer + relocationDir.VirtualAddress);
+
+    // DELTA = (Where it will be in the target process) - (Where it was compiled to be)
+    uintptr_t delta = remoteTargetBase - pNtHeader->OptionalHeader.ImageBase;
+
+    while (pRelocBlock->VirtualAddress != 0) {
+        DWORD entryCount = (pRelocBlock->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD);
+        WORD* pRelativeInfo = reinterpret_cast<WORD*>(pRelocBlock + 1);
+
+        for (DWORD i = 0; i < entryCount; ++i) {
+            int type = pRelativeInfo[i] >> 12;
+            int offset = pRelativeInfo[i] & 0xFFF;
+            if (type == IMAGE_REL_BASED_DIR64 || type == IMAGE_REL_BASED_HIGHLOW) {
+                uintptr_t* pPatch = reinterpret_cast<uintptr_t*>(pLocalBuffer + pRelocBlock->VirtualAddress + offset);
+                *pPatch += delta;
+            }
+        }
+        pRelocBlock = reinterpret_cast<IMAGE_BASE_RELOCATION*>(reinterpret_cast<BYTE*>(pRelocBlock) + pRelocBlock->SizeOfBlock);
+    }
+}
 // Helper to fix the Base Relocation Table
 void RebaseDll(BYTE* pBase, IMAGE_NT_HEADERS* pNtHeader) {
     auto& relocationDir = pNtHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
@@ -65,7 +88,8 @@ HMODULE LocalManualMap(BYTE* pSrcData) {
     auto* pOptHeader = &pNtHeader->OptionalHeader;
 
     // Allocate memory
-    BYTE* pTargetBase = reinterpret_cast<BYTE*>(VirtualAlloc(NULL, pOptHeader->SizeOfImage, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    BYTE* pTargetBase = reinterpret_cast<BYTE*>(mainInjector.vAlloc(HANDLE(-1), NULL, pOptHeader->SizeOfImage));
+    //BYTE* pTargetBase = reinterpret_cast<BYTE*>(VirtualAlloc(NULL, pOptHeader->SizeOfImage, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
     if (!pTargetBase) return nullptr;
 
     // Copy Headers
@@ -87,7 +111,9 @@ HMODULE LocalManualMap(BYTE* pSrcData) {
     }
 
     // Clean up PE Headers (Optional)
+   
+    
     // memset(pTargetBase, 0, pOptHeader->SizeOfHeaders);
-
+    mainInjector.protectMemFlag(HANDLE(-1), pTargetBase, PAGE_EXECUTE_READ, pOptHeader->SizeOfImage);
     return (HMODULE)pTargetBase;
 }
