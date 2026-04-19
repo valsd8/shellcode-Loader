@@ -103,7 +103,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\ADMIN\Documents\Valerian\valerianDev\hack\maldev\patcher\hader\phnt</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\valer\hack\dev\maldev\loader\shellcode-Loader\phnt;C:\Users\ADMIN\Documents\Valerian\valerianDev\hack\maldev\patcher\hader\phntC:\Users\valer\hack\dev\maldev\loader\shellcode-Loader\phnt</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -118,6 +118,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>C:\Users\valer\hack\dev\maldev\loader\shellcode-Loader\phnt;C:\Users\valer\hack\dev\maldev\loader\shellcode-Loader\phnt</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -133,6 +134,7 @@
     <ClCompile Include="helper.cpp" />
     <ClCompile Include="http.cpp" />
     <ClCompile Include="injector.cpp" />
+    <ClCompile Include="overloading.cpp" />
     <ClCompile Include="patch.cpp" />
     <ClCompile Include="syscall_global.cpp" />
     <ClCompile Include="main.cpp" />
@@ -151,6 +153,7 @@
     <ClInclude Include="helper.hpp" />
     <ClInclude Include="http.hpp" />
     <ClInclude Include="injector.hpp" />
+    <ClInclude Include="overloading.hpp" />
     <ClInclude Include="patch.hpp" />
     <ClInclude Include="syscall_global.hpp" />
     <ClInclude Include="syscall.hpp" />

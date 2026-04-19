@@ -10,6 +10,7 @@
 #include <fstream>
 #include <unknwn.h>
 #include "patch.hpp"
+#include "overloading.hpp"
 
 DWORD RvaToOffset(PIMAGE_NT_HEADERS ntHeaders, DWORD rva);
 LPSTR* convertArgsToLPSTRArray(std::wstring args, int& argsCount);
