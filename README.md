@@ -7,6 +7,7 @@ I am not responsable for what u do with it.
 A c++ shellcode loader and .net pe loader.
 it is using indirect syscalls with module stomping.
 it is still in development so stability isnt optimal.
+For the shellcode loading u can use module stomping (better tbf) or apc queue injection
 For the .net loader part its loading a random dll into memory, overwritting it with the .net pe bytes so it doesnt look like unbacked memory.
 To patch amsi and etw this loader is using Hardware breakpoints so ntdll and amsi bytes remains untouched.
 Since using LoadLibrary("amsi.dll") in a c++ pe is very suspicious, this loader just hooks ldrLoadDll, wait for the clr to load it and then patch amsiScanBuffer using hwbp.
