@@ -1,5 +1,6 @@
 #include "def.h"
-
+#include "syscall.hpp"
+#include "injector.hpp"
 
 PVOID GetStompedAddress(HANDLE targetProcess, char* shellcode, size_t shellcodeSize);
 

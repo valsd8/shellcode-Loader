@@ -16,7 +16,7 @@ public:
         int pid = 0;
         std::string method;
         bool useRemote = false;
-
+        bool powershell = false;
         std::wstring url;
         std::wstring file;
         bool https = false;
@@ -27,6 +27,7 @@ public:
     unsigned long simpleHash(const std::string& input);
     PVOID GetModuleBase(const wchar_t* moduleName);
     static void xor_decode(char* data, int len, char key);
+    std::vector<unsigned char> readLocalFile(const std::wstring& path);
 
     static void xor_shellcode(unsigned char* data, int len, unsigned char shellcode_key);
 

