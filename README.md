@@ -1,45 +1,48 @@
 # C++ PE & Shellcode Loader
 
-A custom C++ loader supporting in-memory execution of shellcode and PE files, including .NET assemblies. This project explores advanced Windows internals, process manipulation, memory execution techniques and security mechanism research.
+A custom C++ loader designed to explore Windows internals, in-memory execution, process manipulation and advanced security research. It supports shellcode execution as well as native PE and .NET assembly loading.
 
 > **Disclaimer**
 >
-> This project is intended strictly for educational purposes, security research and authorized testing in controlled environments.
+> This project is intended exclusively for educational purposes, security research and authorized testing in controlled environments.
 >
-> Do not use this software for malicious purposes or against systems without explicit authorization. The author assumes no responsibility for misuse or damage resulting from the use of this project.
+> Do not use this software for malicious purposes or against systems without explicit authorization. The author assumes no responsibility for misuse or damages resulting from the use of this project.
 
-## Features
+## Overview
 
-- **Shellcode execution:** Supports module stomping and APC queue injection as execution methods.
-- **PE loading:** Supports in-memory loading of native PE files and .NET assemblies.
-- **Indirect syscalls:** Implements indirect syscall techniques, including Tartarus' Gate.
-- **Module stomping:** Uses existing modules as execution targets to avoid relying solely on unbacked memory allocations.
-- **AMSI / ETW research:** Experiments with Hardware Breakpoints (HWBP) to intercept relevant Windows API execution paths without directly modifying the original `ntdll` or AMSI function bytes.
-- **Dynamic API interception:** Explores hooks on `LdrLoadDll`, `GetProcAddress` and `NtCreateThreadEx`.
+The project explores different approaches to in-memory execution and Windows process manipulation, including indirect syscalls, module stomping and APC-based execution.
 
-### .NET Assembly Loading
+It also investigates Windows security mechanisms such as AMSI and ETW, with a particular focus on API interception and Hardware Breakpoints (HWBP).
 
-The .NET loading component uses an existing DLL allocation as a memory backing region, replacing its contents with the target .NET PE data.
+## Technical Details
+
+### Shellcode & PE Loading
+
+The loader supports in-memory execution of shellcode through module stomping or APC queue injection. It also implements PE loading capabilities, including support for .NET assemblies.
+
+### Windows Internals
+
+The project explores indirect syscall techniques, including Tartarus' Gate, alongside Windows API interception and process manipulation.
 
 ### AMSI & ETW Research
 
-The loader explores alternative approaches to AMSI and ETW instrumentation through hardware breakpoints and API interception.
+Hardware Breakpoints are used to experiment with API interception while leaving the original function bytes in `ntdll` and AMSI untouched.
 
-For AMSI, it intercepts DLL loading and API resolution to redirect execution towards a manually mapped AMSI module.
+The AMSI component explores DLL loading and API resolution interception, redirecting execution towards a manually mapped AMSI module.
 
-For ETW, it explores interception of thread creation and hardware-breakpoint-based instrumentation of `EtwEventWrite`.
+The ETW component investigates thread creation interception through `NtCreateThreadEx` and hardware-breakpoint-based instrumentation of `EtwEventWrite`.
 
 These implementations are experimental and may behave differently depending on the Windows version and execution environment.
 
 ## Demo
 
-A short demonstration showing `certify.exe` being retrieved from a SharpCollection release URL and executed directly from memory through the loader, without first saving the executable to disk.
+The following video demonstrates `certify.exe` being retrieved from a SharpCollection release URL and executed directly from memory through the loader, without being written to disk first.
 
 [▶ Watch demo.mp4](./demo.mp4)
 
 ## Usage
 
-The loader provides a command-line interface with several execution options.
+The loader provides a command-line interface to interact with its different components.
 
 ![Usage](https://github.com/user-attachments/assets/5bbeeb45-bc5c-43a7-a28b-b17dad01611a)
 
@@ -47,18 +50,14 @@ The loader provides a command-line interface with several execution options.
 
 ## Development Status
 
-**Work in progress — stability and reliability are not guaranteed.**
+**Work in progress.**
 
-This project is actively being developed. Some features are experimental, and unexpected behavior or crashes may occur.
+The project is still under active development. Some components remain experimental, and stability is not guaranteed. Unexpected behavior or crashes may occur.
 
 ## Roadmap
 
-- [ ] AES-based payload encryption and key support
-- [ ] Codebase refactoring and improved code quality
-- [ ] Stack spoofing research
-- [ ] Support for additional remote resource retrieval protocols beyond HTTP/HTTPS
-- [ ] Improve stability and reliability
+Future development includes AES-based payload encryption, improved code quality and maintainability, stack spoofing research, and support for additional remote resource retrieval protocols beyond HTTP and HTTPS.
 
 ## Disclaimer
 
-This repository is provided as-is, without warranties or guarantees of any kind. It is intended for legitimate security research, educational use and authorized security assessments only.
+This software is provided as-is, without warranties or guarantees of any kind. It is intended exclusively for legitimate security research, educational purposes and authorized security assessments.
