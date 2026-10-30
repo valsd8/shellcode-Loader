@@ -38,7 +38,7 @@ These implementations are experimental and may behave differently depending on t
 
 A demonstration of `certify.exe` being retrieved from a SharpCollection release URL and executed directly from memory through the loader.
 
-https://github.com/valsd8/shellcode-Loader/raw/refs/heads/main/demo.mp4
+https://github.com/valsd8/shellcode-Loader/raw/refs/heads/master/demo.mp4
 
 ## Usage
 
