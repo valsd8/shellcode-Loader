@@ -44,7 +44,7 @@ https://github.com/valsd8/shellcode-Loader/raw/refs/heads/master/demo.mp4
 
 The loader provides a command-line interface to interact with its different components.
 
-![Usage](https://github.com/user-attachments/assets/5bbeeb45-bc5c-43a7-a28b-b17dad01611a)
+![Usage](./help_menu.png)
 
 **Note:** The PowerShell script execution option currently displayed in the help menu is still under development and is not functional.
 
